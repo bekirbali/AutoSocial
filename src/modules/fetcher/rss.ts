@@ -26,6 +26,8 @@ export interface FetchedItem {
   title: string;
   summary?: string;
   imageUrl?: string;
+  videoUrl?: string;
+  mediaType?: 'image' | 'video';
   publishedAt: Date;
   sourceName: string;
   sourceId: string;

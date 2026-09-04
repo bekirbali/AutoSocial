@@ -36,6 +36,8 @@ async function processJob(job: Job<ProcessJobData>): Promise<void> {
     title: job.data.title,
     summary: job.data.summary,
     imageUrl: job.data.imageUrl,
+    videoUrl: job.data.videoUrl,
+    mediaType: job.data.mediaType,
     publishedAt: new Date(job.data.publishedAt),
     sourceId: job.data.sourceId,
     sourceName: job.data.sourceName,

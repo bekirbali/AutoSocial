@@ -8,6 +8,7 @@ import {
   type PublishJobData,
 } from '../lib/queue.js';
 import { generateDailySchedule, getTodayPublishedCount } from '../modules/publisher/scheduler.js';
+import { cleanupOldVideos } from './cleanup.js';
 import { env } from '../config/env.js';
 import { db } from '../db/index.js';
 import { processedArticles } from '../db/schema.js';
@@ -101,6 +102,9 @@ export async function registerCronJobs(): Promise<void> {
  * günlük plan zamanlarına delayed job olarak ekler.
  */
 export async function schedulePublishJobs(): Promise<void> {
+  // Eski videoları temizle (24 saatten eski olanlar)
+  await cleanupOldVideos().catch(e => log.error({ err: e.message }, 'Cleanup hatası'));
+
   const schedule = generateDailySchedule();
   const todayCount = await getTodayPublishedCount();
 

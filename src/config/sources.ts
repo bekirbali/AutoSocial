@@ -16,7 +16,8 @@ export interface SourceConfig {
   id: string;
   name: string;
   url: string;
-  rssUrl: string;
+  rssUrl: string; // Reddit için subreddit adı veya rss formatı, örn: reddit:PublicFreakout
+  type?: 'rss' | 'reddit';
   lang: 'en' | 'tr';
   reliability: 1 | 2 | 3 | 4 | 5;
   categories: string[];
@@ -116,6 +117,39 @@ export const SOURCES: SourceConfig[] = [
     categories: ['donanım', 'test', 'overclock'],
     isActive: true,
   },
+  {
+    id: 'reddit_publicfreakout',
+    name: 'Reddit PublicFreakout',
+    url: 'https://www.reddit.com/r/PublicFreakout',
+    rssUrl: 'PublicFreakout',
+    type: 'reddit',
+    lang: 'en',
+    reliability: 3,
+    categories: ['genel', 'video'], // Sadece test amaçlı, normalde donanım kategorisi olur
+    isActive: false, // TODO: API entegrasyonu yapılınca true yapılacak
+  },
+  {
+    id: 'reddit_crazyfuckingvideos',
+    name: 'Reddit CrazyFuckingVideos',
+    url: 'https://www.reddit.com/r/CrazyFuckingVideos',
+    rssUrl: 'CrazyFuckingVideos',
+    type: 'reddit',
+    lang: 'en',
+    reliability: 3,
+    categories: ['genel', 'video'],
+    isActive: false, // TODO: API entegrasyonu yapılınca true yapılacak
+  },
+  {
+    id: 'reddit_interestingasfuck',
+    name: 'Reddit interestingasfuck',
+    url: 'https://www.reddit.com/r/interestingasfuck',
+    rssUrl: 'interestingasfuck',
+    type: 'reddit',
+    lang: 'en',
+    reliability: 3,
+    categories: ['genel', 'video'],
+    isActive: false, // TODO: API entegrasyonu yapılınca true yapılacak
+  },
 
   // ─── TÜRKÇE KAYNAKLAR ──────────────────────────────────────────────────────
 
@@ -127,13 +161,13 @@ export const SOURCES: SourceConfig[] = [
     lang: 'tr',
     reliability: 5,
     categories: ['donanım', 'fırsat', 'inceleme', 'işlemci', 'ekran kartı'],
-    isActive: true,
+    isActive: false, // Donanım Haber RSS sistemini kapattığı için (HTML dönüyor) askıya alındı
   },
   {
     id: 'chip_tr',
     name: 'Chip Online TR',
     url: 'https://chip.com.tr',
-    rssUrl: 'https://chip.com.tr/feed',
+    rssUrl: 'https://www.chip.com.tr/rss',
     lang: 'tr',
     reliability: 4,
     categories: ['donanım', 'teknoloji', 'oyun'],

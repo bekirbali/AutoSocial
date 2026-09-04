@@ -5,8 +5,9 @@ import { createLogger } from '../../lib/logger.js';
 import { isDuplicate, markAsProcessed, hasSimilarTitle } from './dedup.js';
 import { filterArticle } from './filter.js';
 import { scoreArticle } from './scorer.js';
-import { generateTweet } from './ai.js';
+import { generateTweet, generateInstagramCaption } from './ai.js';
 import { generateNewsCard } from './image.js';
+import { downloadVideo } from './mediaDownloader.js';
 import { hashUrl } from './dedup.js';
 import { detectCategory } from '../../config/keywords.js';
 import { env } from '../../config/env.js';
@@ -97,28 +98,63 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
     // ─── ADIM 6: Kategori Tespiti ────────────────────────────────────────────
     const category = detectCategory(item.title + ' ' + (item.summary ?? ''));
 
-    // ─── ADIM 7: AI ile Tweet Üretimi ────────────────────────────────────────
-    const tweetResult = await generateTweet(
-      item.title,
-      item.summary,
-      item.sourceName,
-      category,
-    );
+    // ─── ADIM 6.5: Video İndirme (Eğer video ise) ────────────────────────────
+    let videoPath: string | undefined;
+    if (item.mediaType === 'video' && item.videoUrl) {
+      try {
+        videoPath = await downloadVideo(item.videoUrl);
+      } catch (e: any) {
+        log.warn({ err: e.message, url: item.url }, 'Video indirilemedi, metin tabanlı devam edilecek');
+      }
+    }
+
+    // ─── ADIM 7: AI ile Tweet ve IG Caption Üretimi ────────────────────────────────────────
+    const [tweetResult, igResult] = await Promise.all([
+      generateTweet(
+        item.title,
+        item.summary,
+        item.sourceName,
+        category,
+        videoPath
+      ),
+      generateInstagramCaption(
+        item.title,
+        item.summary,
+        item.sourceName,
+        category,
+        videoPath
+      ).catch(e => {
+        log.warn({ err: e.message }, 'Instagram caption üretilemedi, null atanacak');
+        return null;
+      })
+    ]);
 
     // ─── ADIM 8: Görsel Üretimi ───────────────────────────────────────────────
     let imagePath: string | undefined;
     let imageSource: string | undefined;
 
     try {
-      const imageResult = await generateNewsCard(
+      // X (Twitter) için 16:9 görsel
+      const imageResult16x9 = await generateNewsCard(
         tweetResult.translatedTitle,
         item.sourceName,
         category,
         item.publishedAt,
         rawArticle.id,
+        '16:9'
       );
-      imagePath = imageResult.imagePath;
-      imageSource = imageResult.imageSource;
+      imagePath = imageResult16x9.imagePath;
+      imageSource = imageResult16x9.imageSource;
+
+      // Instagram için 4:5 görsel
+      await generateNewsCard(
+        tweetResult.translatedTitle,
+        item.sourceName,
+        category,
+        item.publishedAt,
+        rawArticle.id,
+        '4:5'
+      );
     } catch (imgErr) {
       log.warn(
         { err: imgErr instanceof Error ? imgErr.message : imgErr, url: item.url },
@@ -135,7 +171,9 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
       tweetText: tweetResult.tweetText,
       hashtags: tweetResult.hashtags,
       threadTweets: tweetResult.threadTweets,
+      instagramCaption: igResult?.caption,
       imagePath,
+      videoPath,
       imageSource,
       tone: tweetResult.tone,
       category,

@@ -4,6 +4,7 @@ import { sources } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '../../lib/logger.js';
 import { fetchRssFeed, type FetchedItem } from './rss.js';
+import { fetchRedditVideos } from './reddit.js';
 import type { SourceConfig } from '../../config/sources.js';
 
 const log = createLogger('fetcher');
@@ -48,7 +49,12 @@ export async function fetchAllSources(): Promise<FetchedItem[]> {
  */
 async function fetchSourceWithTracking(source: SourceConfig): Promise<FetchResult> {
   try {
-    const items = await fetchRssFeed(source);
+    let items: FetchedItem[] = [];
+    if (source.type === 'reddit') {
+      items = await fetchRedditVideos(source.rssUrl); // rssUrl holds the subreddit name
+    } else {
+      items = await fetchRssFeed(source);
+    }
 
     // Başarılı çekim — hata sayacını sıfırla, last_fetched_at güncelle
     await db

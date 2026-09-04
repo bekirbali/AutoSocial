@@ -26,13 +26,21 @@ const EnvSchema = z.object({
   GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY gerekli'),
 
   // Telegram (Faz 3'te zorunlu hale gelecek)
-  TELEGRAM_HTTP_API: z.string().optional(),
-  TELEGRAM_CHAT_ID: z.string().optional(),
+  TELEGRAM_BOT_TOKEN: z.string().min(1, 'Telegram bot token gerekli'),
+  TELEGRAM_CHAT_ID: z.string().min(1, 'Telegram chat ID (kanal/grup) gerekli'),
+
+  // Instagram Graph API
+  IG_ACCESS_TOKEN: z.string().optional(),
+  IG_ACCOUNT_ID: z.string().optional(),
+
+  // Public URL (Instagram'ın görselleri çekebilmesi için uygulamanın erişilebilir URL'si)
+  // Geliştirme ortamında ngrok vb. olabilir, production'da Railway domain'i.
+  APP_PUBLIC_URL: z.string().url('Geçerli bir APP_PUBLIC_URL girin').optional(),
 
   // Sistem Ayarları
   MAX_TWEETS_PER_DAY: z.coerce.number().int().min(1).max(50).default(15),
   MIN_TWEETS_PER_DAY: z.coerce.number().int().min(1).default(8),
-  MIN_SCORE_THRESHOLD: z.coerce.number().min(0).max(100).default(80),
+  MIN_SCORE_THRESHOLD: z.coerce.number().min(0).max(100).default(90),
   FETCH_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(15),
   ANALYTICS_FETCH_INTERVAL_HOURS: z.coerce.number().int().min(1).default(6),
 

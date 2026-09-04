@@ -7,9 +7,11 @@ import path from 'path';
 
 const log = createLogger('processor:image');
 
-// Çıktı boyutu — Twitter card için optimal
-const WIDTH = 1200;
-const HEIGHT = 675;
+// Çıktı boyutu — Varsayılan (Twitter/X için)
+const DEFAULT_WIDTH = 1200;
+const DEFAULT_HEIGHT = 675;
+
+export type ImageFormat = '16:9' | '4:5';
 
 // Görsel çıktı klasörü
 const OUTPUT_DIR = './output/images';
@@ -37,22 +39,26 @@ export async function generateNewsCard(
   category: ArticleCategory,
   publishedAt: Date,
   articleId: string,
+  format: ImageFormat = '16:9',
 ): Promise<ImageGenerationResult> {
   // Çıktı klasörünü oluştur
   if (!existsSync(OUTPUT_DIR)) {
     await mkdir(OUTPUT_DIR, { recursive: true });
   }
 
-  const imagePath = path.join(OUTPUT_DIR, `${articleId}.webp`);
+  const width = format === '4:5' ? 1080 : 1200;
+  const height = format === '4:5' ? 1350 : 675;
+  const ext = 'jpeg'; // Instagram API sadece JPEG kabul ediyor, uyumluluk için her formatta JPEG kullanıyoruz.
+
+  const imagePath = path.join(OUTPUT_DIR, `${articleId}_${format.replace(':', 'x')}.${ext}`);
   const colors = CATEGORY_COLORS[category];
 
   // Gradient arka plan SVG
-  const gradientSvg = buildGradientSvg(colors.from, colors.to, title, sourceName, category, publishedAt);
+  const gradientSvg = buildGradientSvg(colors.from, colors.to, title, sourceName, category, publishedAt, width, height, format);
 
-  await sharp(Buffer.from(gradientSvg))
-    .resize(WIDTH, HEIGHT)
-    .webp({ quality: 85 })
-    .toFile(imagePath);
+  const sharpInstance = sharp(Buffer.from(gradientSvg)).resize(width, height);
+  
+  await sharpInstance.jpeg({ quality: 90 }).toFile(imagePath);
 
   log.debug({ articleId, category, imagePath }, 'Görsel üretildi');
 
@@ -69,8 +75,12 @@ function buildGradientSvg(
   sourceName: string,
   category: ArticleCategory,
   publishedAt: Date,
+  width: number,
+  height: number,
+  format: ImageFormat,
 ): string {
-  const safeTitle = escapeXml(wrapText(title, 45));
+  const charsPerLine = format === '4:5' ? 35 : 45;
+  const safeTitle = escapeXml(wrapText(title, charsPerLine));
   const safeSource = escapeXml(sourceName);
   const safeCategory = escapeXml(categoryLabel(category));
   const dateStr = publishedAt.toLocaleDateString('tr-TR', {
@@ -84,16 +94,20 @@ function buildGradientSvg(
 
   // Başlığı satırlara böl
   const titleLines = safeTitle.split('\n');
-  const titleYStart = 480 - titleLines.length * 40;
+  
+  const titleFontSize = format === '4:5' ? 52 : 36;
+  const titleLineHeight = format === '4:5' ? 68 : 48;
+  const titleBaseY = format === '4:5' ? height - 150 : height - 195;
+  const titleYStart = titleBaseY - titleLines.length * titleLineHeight;
 
   const titleSvg = titleLines
     .map(
       (line, i) =>
-        `<text x="60" y="${titleYStart + i * 48}" font-family="'Segoe UI', Arial, sans-serif" font-size="36" font-weight="700" fill="white" letter-spacing="-0.5">${line}</text>`,
+        `<text x="${format === '4:5' ? 80 : 60}" y="${titleYStart + i * titleLineHeight}" font-family="'Segoe UI', Arial, sans-serif" font-size="${titleFontSize}" font-weight="700" fill="white" letter-spacing="-0.5">${line}</text>`,
     )
     .join('\n');
 
-  return `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:${fromColor};stop-opacity:1" />
@@ -107,40 +121,35 @@ function buildGradientSvg(
   </defs>
 
   <!-- Arka plan gradient -->
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#bg)" />
+  <rect width="${width}" height="${height}" fill="url(#bg)" />
 
   <!-- Dekoratif desen — subtle grid lines -->
-  <line x1="0" y1="0" x2="${WIDTH}" y2="${HEIGHT}" stroke="white" stroke-opacity="0.03" stroke-width="1"/>
-  <line x1="${WIDTH}" y1="0" x2="0" y2="${HEIGHT}" stroke="white" stroke-opacity="0.03" stroke-width="1"/>
-  <circle cx="${WIDTH * 0.8}" cy="${HEIGHT * 0.2}" r="200" fill="white" fill-opacity="0.03"/>
-  <circle cx="${WIDTH * 0.1}" cy="${HEIGHT * 0.8}" r="150" fill="white" fill-opacity="0.02"/>
+  <line x1="0" y1="0" x2="${width}" y2="${height}" stroke="white" stroke-opacity="0.03" stroke-width="1"/>
+  <line x1="${width}" y1="0" x2="0" y2="${height}" stroke="white" stroke-opacity="0.03" stroke-width="1"/>
+  <circle cx="${width * 0.8}" cy="${height * 0.2}" r="${format === '4:5' ? 300 : 200}" fill="white" fill-opacity="0.03"/>
+  <circle cx="${width * 0.1}" cy="${height * 0.8}" r="${format === '4:5' ? 250 : 150}" fill="white" fill-opacity="0.02"/>
 
   <!-- Overlay gradient (alt karartma) -->
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#overlay)" />
+  <rect width="${width}" height="${height}" fill="url(#overlay)" />
 
   <!-- Sol kenar vurgu çizgisi -->
-  <rect x="0" y="0" width="5" height="${HEIGHT}" fill="white" fill-opacity="0.8" />
+  <rect x="0" y="0" width="${format === '4:5' ? 8 : 5}" height="${height}" fill="white" fill-opacity="0.8" />
 
   <!-- Kaynak etiketi (sol üst) -->
-  <rect x="24" y="24" width="${Math.min(safeSource.length * 11 + 30, 300)}" height="42" rx="8" fill="white" fill-opacity="0.15" />
-  <text x="40" y="52" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="white">${safeSource}</text>
-
-  <!-- Kategori etiketi (sağ üst) - İptal edildi
-  <rect x="${WIDTH - 200}" y="24" width="178" height="42" rx="8" fill="white" fill-opacity="0.15" />
-  <text x="${WIDTH - 110}" y="52" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="15" font-weight="600" fill="#a0a0a0">${safeCategory}</text>
-  -->
+  <rect x="${format === '4:5' ? 36 : 24}" y="${format === '4:5' ? 36 : 24}" width="${Math.min(safeSource.length * (format === '4:5' ? 16 : 11) + 40, 400)}" height="${format === '4:5' ? 54 : 42}" rx="8" fill="white" fill-opacity="0.15" />
+  <text x="${format === '4:5' ? 56 : 40}" y="${format === '4:5' ? 72 : 52}" font-family="'Segoe UI', Arial, sans-serif" font-size="${format === '4:5' ? 24 : 18}" font-weight="600" fill="white">${safeSource}</text>
 
   <!-- Haber başlığı (alt orta) -->
   ${titleSvg}
 
   <!-- Alt bilgi çubuğu -->
-  <rect x="0" y="${HEIGHT - 55}" width="${WIDTH}" height="55" fill="black" fill-opacity="0.5" />
+  <rect x="0" y="${height - (format === '4:5' ? 80 : 55)}" width="${width}" height="${format === '4:5' ? 80 : 55}" fill="black" fill-opacity="0.5" />
 
   <!-- Tarih (alt sol) -->
-  <text x="24" y="${HEIGHT - 22}" font-family="'Segoe UI', Arial, sans-serif" font-size="16" fill="#8a8a8a">${safeDateStr}</text>
+  <text x="${format === '4:5' ? 36 : 24}" y="${height - (format === '4:5' ? 32 : 22)}" font-family="'Segoe UI', Arial, sans-serif" font-size="${format === '4:5' ? 22 : 16}" fill="#8a8a8a">${safeDateStr}</text>
 
   <!-- DonanımPost brand (alt sağ) -->
-  <text x="${WIDTH - 24}" y="${HEIGHT - 22}" text-anchor="end" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#4a4a4a">DonanımPost</text>
+  <text x="${width - (format === '4:5' ? 36 : 24)}" y="${height - (format === '4:5' ? 32 : 22)}" text-anchor="end" font-family="'Segoe UI', Arial, sans-serif" font-size="${format === '4:5' ? 24 : 16}" font-weight="600" fill="#4a4a4a">DonanımPost</text>
 </svg>`;
 }
 

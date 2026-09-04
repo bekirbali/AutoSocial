@@ -67,6 +67,8 @@ export interface ProcessJobData {
   title: string;
   summary?: string;
   imageUrl?: string;
+  videoUrl?: string;
+  mediaType?: 'image' | 'video';
   publishedAt: string; // ISO string
   sourceId: string;
   sourceName: string;

@@ -48,6 +48,8 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
       title: item.title,
       summary: item.summary,
       imageUrl: item.imageUrl ?? undefined,
+      videoUrl: item.videoUrl ?? undefined,
+      mediaType: item.mediaType ?? 'image',
       publishedAt: item.publishedAt.toISOString(),
       sourceId: item.sourceId,
       sourceName: item.sourceName,

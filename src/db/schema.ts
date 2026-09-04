@@ -51,6 +51,8 @@ export const rawArticles = pgTable(
     summary: text('summary'),
     fullText: text('full_text'),
     imageUrl: text('image_url'),
+    videoUrl: text('video_url'),
+    mediaType: text('media_type').default('image').notNull(),
     publishedAt: timestamp('published_at', { withTimezone: true }).notNull(),
     fetchedAt: timestamp('fetched_at', { withTimezone: true })
       .default(sql`NOW()`)
@@ -80,6 +82,7 @@ export const processedArticles = pgTable(
     hashtags: text('hashtags').array(),
     threadTweets: jsonb('thread_tweets'),
     imagePath: text('image_path'),
+    videoPath: text('video_path'),
     imageSource: text('image_source'),
     tone: text('tone'),
     category: text('category'),

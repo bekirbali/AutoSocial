@@ -28,7 +28,7 @@ export interface TweetPostResult {
 export async function postTweet(
   text: string,
   hashtags: string[],
-  imagePath?: string,
+  mediaPath?: string,
 ): Promise<TweetPostResult> {
   // Tweet metni + hashtag birleştir
   const fullText = buildTweetText(text, hashtags);
@@ -37,19 +37,19 @@ export async function postTweet(
 
   let mediaId: string | undefined;
 
-  // Görsel varsa yükle
-  if (imagePath && existsSync(imagePath)) {
+  // Medya varsa yükle
+  if (mediaPath && existsSync(mediaPath)) {
     try {
-      const imageBuffer = await readFile(imagePath);
-      const uploaded = await twitterClient.v1.uploadMedia(imageBuffer, {
-        mimeType: 'image/webp',
-      });
+      const isVideo = mediaPath.toLowerCase().endsWith('.mp4');
+      
+      // twitter-api-v2 string yol verilirse otomatik mime-type algılar ve büyük dosyalar için chunked upload yapar
+      const uploaded = await twitterClient.v1.uploadMedia(mediaPath, isVideo ? { longVideo: true } : undefined);
       mediaId = uploaded;
-      log.debug({ mediaId }, 'Görsel yüklendi');
+      log.debug({ mediaId, isVideo }, 'Medya X sunucularına yüklendi');
     } catch (imgErr) {
       log.warn(
         { err: imgErr instanceof Error ? imgErr.message : imgErr },
-        'Görsel yüklenemedi, görselsiz tweet atılıyor',
+        'Medya yüklenemedi, medyasız tweet atılıyor',
       );
     }
   }

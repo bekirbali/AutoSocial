@@ -11,8 +11,8 @@ const log = createLogger('telegram:bot');
 
 let bot: Telegraf | null = null;
 
-if (env.TELEGRAM_HTTP_API) {
-  bot = new Telegraf(env.TELEGRAM_HTTP_API);
+if (env.TELEGRAM_BOT_TOKEN) {
+  bot = new Telegraf(env.TELEGRAM_BOT_TOKEN);
 
   bot.catch((err) => {
     log.error({ err: err instanceof Error ? err.message : err }, 'Telegraf bot hatası (polling vs.)');
@@ -20,24 +20,29 @@ if (env.TELEGRAM_HTTP_API) {
 
   // ─── ACTION HANDLERS ────────────────────────────────────────────────────────
 
-  // Onaylama / Hemen Yayınlama aksiyonu
-  bot.action(/^(approve|publish_now):(.+)$/, async (ctx) => {
-    const action = ctx.match[1];
-    const articleId = ctx.match[2];
+  // Onaylama / Hemen Yayınlama aksiyonu (Çoklu platform desteği eklendi)
+  bot.action(/^(pub|queue):(x|ig|all):(.+)$/, async (ctx) => {
+    const action = ctx.match[1]; // pub veya queue
+    const platform = ctx.match[2]; // x, ig veya all
+    const articleId = ctx.match[3];
     if (!articleId) {
       await ctx.answerCbQuery('Hatalı ID');
       return;
     }
 
     try {
-      // 1. Veritabanında durumu 'approved' yap
+      let targets = ['x'];
+      if (platform === 'ig') targets = ['instagram'];
+      if (platform === 'all') targets = ['x', 'instagram'];
+
+      // 1. Veritabanında durumu 'approved' yap ve platform hedeflerini kaydet
       await db
         .update(processedArticles)
-        .set({ status: 'approved', updatedAt: new Date() })
+        .set({ status: 'approved', platformTargets: targets, updatedAt: new Date() })
         .where(eq(processedArticles.id, articleId));
 
       // 2. Publish sırasına (delayed job) ekle
-      const publishAt = action === 'publish_now' ? new Date() : await getNextPublishSlot();
+      const publishAt = action === 'pub' ? new Date() : await getNextPublishSlot();
       const delayMs = Math.max(0, publishAt.getTime() - Date.now());
 
       const publishJobData: PublishJobData = {
@@ -52,9 +57,10 @@ if (env.TELEGRAM_HTTP_API) {
       );
 
       // 3. Mesajı güncelle (butonları kaldır, onaylandı yaz)
-      const captionStatus = action === 'publish_now' 
-        ? `✅ <b>HEMEN YAYINLANDI</b>`
-        : `✅ <b>ONAYLANDI</b> (Sıraya alındı: ${publishAt.toLocaleTimeString('tr-TR')})`;
+      const platformStr = platform === 'all' ? 'X + Instagram' : (platform === 'ig' ? 'Instagram' : 'X');
+      const captionStatus = action === 'pub' 
+        ? `✅ <b>HEMEN YAYINLANDI (${platformStr})</b>`
+        : `✅ <b>ONAYLANDI (${platformStr})</b> (Sıraya alındı: ${publishAt.toLocaleTimeString('tr-TR')})`;
 
       await ctx.editMessageCaption(
         `${ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message ? ctx.callbackQuery.message.caption : ''}\n\n${captionStatus}`,
@@ -69,8 +75,8 @@ if (env.TELEGRAM_HTTP_API) {
         ).catch(() => {});
       }
 
-      await ctx.answerCbQuery(action === 'publish_now' ? 'Hemen yayınlanıyor!' : 'Makale sıraya alındı!');
-      log.info({ articleId, scheduledFor: publishAt.toISOString(), isImmediate: action === 'publish_now' }, 'Makale Telegram üzerinden onaylandı');
+      await ctx.answerCbQuery(action === 'pub' ? 'Hemen yayınlanıyor!' : 'Makale sıraya alındı!');
+      log.info({ articleId, platform, scheduledFor: publishAt.toISOString(), isImmediate: action === 'pub' }, 'Makale Telegram üzerinden onaylandı');
     } catch (error) {
       log.error({ err: error instanceof Error ? error.message : error }, 'Onaylama hatası');
       await ctx.answerCbQuery('Bir hata oluştu!');
@@ -133,11 +139,11 @@ if (env.TELEGRAM_HTTP_API) {
       for (const row of replyTo.reply_markup.inline_keyboard) {
         for (const btn of row) {
           if ('callback_data' in btn) {
-            if (btn.callback_data?.startsWith('approve:')) {
-              articleId = btn.callback_data.split(':')[1];
+            if (btn.callback_data?.startsWith('queue:')) {
+              articleId = btn.callback_data.split(':')[2];
               break;
-            } else if (btn.callback_data?.startsWith('publish_now:')) {
-              articleId = btn.callback_data.split(':')[1];
+            } else if (btn.callback_data?.startsWith('pub:')) {
+              articleId = btn.callback_data.split(':')[2];
               break;
             }
           }
@@ -186,7 +192,7 @@ if (env.TELEGRAM_HTTP_API) {
 
       caption += (raw.url ? `🔗 <a href="${raw.url}">Kaynak Linki</a>` : '');
 
-      const buttons = replyTo.reply_markup;
+      const buttons = (replyTo as any).reply_markup;
 
       if ('caption' in replyTo) {
         await ctx.telegram.editMessageCaption(
@@ -222,7 +228,7 @@ if (env.TELEGRAM_HTTP_API) {
  */
 export async function startTelegramBot(): Promise<void> {
   if (!bot) {
-    log.warn('TELEGRAM_HTTP_API tanımlı değil, bot başlatılamadı.');
+    log.warn('TELEGRAM_BOT_TOKEN tanımlı değil, bot başlatılamadı.');
     return;
   }
 
@@ -273,8 +279,15 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
 
   const buttons = Markup.inlineKeyboard([
     [
-      Markup.button.callback('🚀 Hemen Yayınla', `publish_now:${data.articleId}`),
-      Markup.button.callback('🕒 Sıraya Al', `approve:${data.articleId}`),
+      Markup.button.callback("🚀 X'e Yayınla", `pub:x:${data.articleId}`),
+      Markup.button.callback("🚀 IG'ye Yayınla", `pub:ig:${data.articleId}`),
+    ],
+    [
+      Markup.button.callback('🚀 İkisine de Yayınla', `pub:all:${data.articleId}`),
+    ],
+    [
+      Markup.button.callback('🕒 Sıraya Al (X+IG)', `queue:all:${data.articleId}`),
+      Markup.button.callback('🕒 Sıraya Al (X)', `queue:x:${data.articleId}`),
     ],
     [
       Markup.button.callback('✏️ Düzenle', `edit_instruction`),

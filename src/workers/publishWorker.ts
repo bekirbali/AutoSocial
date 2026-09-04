@@ -2,9 +2,10 @@ import { Worker, type Job } from 'bullmq';
 import { createLogger } from '../lib/logger.js';
 import { redisConnection, QUEUE_NAMES, type PublishJobData } from '../lib/queue.js';
 import { db } from '../db/index.js';
-import { processedArticles, publishedTweets, rawArticles } from '../db/schema.js';
+import { processedArticles, publishedTweets, publishedInstagramPosts, rawArticles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { postTweet, postReply } from '../modules/publisher/twitter.js';
+import { postToInstagram } from '../modules/publisher/instagram.js';
 import { withRateLimit } from '../modules/publisher/rateLimiter.js';
 import { getTodayPublishedCount } from '../modules/publisher/scheduler.js';
 import { updateDailyStats } from '../modules/analytics/dailyStats.js';
@@ -40,7 +41,10 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
       tweetText: processedArticles.tweetText,
       hashtags: processedArticles.hashtags,
       threadTweets: processedArticles.threadTweets,
+      instagramCaption: processedArticles.instagramCaption,
+      platformTargets: processedArticles.platformTargets,
       imagePath: processedArticles.imagePath,
+      videoPath: processedArticles.videoPath,
       status: processedArticles.status,
       articleUrl: rawArticles.url,
     })
@@ -77,55 +81,106 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
       .set({ status: 'queued', updatedAt: new Date() })
       .where(eq(processedArticles.id, article.id));
 
-    // Tweet at (rate limit korumalı)
-    let currentTweetId: string;
+    // Hedef platformları kontrol et (Eğer belirtilmemişse varsayılan 'x' kabul et)
+    const targets = article.platformTargets || ['x'];
 
-    const { tweetId, tweetUrl } = await withRateLimit(() =>
-      postTweet(
-        article.tweetText,
-        (article.hashtags as string[]) ?? [],
-        article.imagePath ?? undefined,
-      ),
-    );
-    currentTweetId = tweetId;
+    // ─── Twitter (X) Yayını ───
+    if (targets.includes('x')) {
+      const existingTweet = await db.query.publishedTweets.findFirst({
+        where: eq(publishedTweets.processedId, article.id)
+      });
 
-    // Eğer thread ise diğer tweetleri reply olarak at
-    const threadTweets = article.threadTweets as string[] | null;
-    if (threadTweets && threadTweets.length > 0) {
-      for (const tTweet of threadTweets) {
-        try {
-          const threadResult = await withRateLimit(() => postReply(currentTweetId, tTweet));
-          currentTweetId = threadResult.tweetId;
-        } catch (threadErr) {
-          log.warn({ err: threadErr instanceof Error ? threadErr.message : String(threadErr) }, 'Thread tweeti atılamadı, zincir koptu');
-          break; // Zincir koptuysa devam etme
+      if (existingTweet) {
+        log.info({ processedArticleId }, 'X (Twitter) için zaten yayınlanmış, atlanıyor.');
+      } else {
+        let currentTweetId: string;
+
+        const { tweetId, tweetUrl } = await withRateLimit(() =>
+          postTweet(
+            article.tweetText,
+            (article.hashtags as string[]) ?? [],
+            article.videoPath ?? article.imagePath ?? undefined,
+          ),
+        );
+        currentTweetId = tweetId;
+
+        // Eğer thread ise diğer tweetleri reply olarak at
+        // TODO: (Faz 1-3) 15 tweet/gün limitine takılmamak için thread özelliği şimdilik askıya alındı
+        /*
+        const threadTweets = article.threadTweets as string[] | null;
+        if (threadTweets && Array.isArray(threadTweets) && threadTweets.length > 0) {
+          log.info({ tweetId, threadLength: threadTweets.length }, 'Thread tweetleri atılıyor');
+          for (const threadText of threadTweets) {
+            try {
+              const replyResult = await withRateLimit(() => postReply(currentTweetId, threadText));
+              currentTweetId = replyResult.tweetId;
+            } catch (threadErr) {
+              log.error({ err: threadErr instanceof Error ? threadErr.message : threadErr }, 'Thread parçası atılamadı, işlem kesiliyor');
+              throw threadErr;
+            }
+          }
         }
+        */
+
+        // Thread'in en sonuna (veya tek tweetse ilkine) kaynak linki
+        // TODO: (Faz 1-3) 15 tweet/gün limitine takılmamak için yorum olarak link atma kapatıldı
+        let replyTweetId: string | undefined;
+        /*
+        if (article.articleUrl) {
+          try {
+            const replyResult = await withRateLimit(() =>
+              postReply(currentTweetId, `🔗 Kaynak: ${article.articleUrl}`),
+            );
+            replyTweetId = replyResult.tweetId;
+          } catch (replyErr) {
+            log.warn(
+              { err: replyErr instanceof Error ? replyErr.message : replyErr },
+              'Link yorumu eklenemedi (kritik değil)',
+            );
+          }
+        }
+        */
+
+        // published_tweets tablosuna kaydet
+        await db.insert(publishedTweets).values({
+          processedId: article.id,
+          tweetId,
+          tweetUrl,
+          replyTweetId,
+        });
+        log.info({ tweetId, tweetUrl, processedArticleId }, '✅ Tweet yayınlandı');
       }
     }
 
-    // Thread'in en sonuna (veya tek tweetse ilkine) kaynak linki
-    let replyTweetId: string | undefined;
-    if (article.articleUrl) {
-      try {
-        const replyResult = await withRateLimit(() =>
-          postReply(currentTweetId, `🔗 Kaynak: ${article.articleUrl}`),
+    // ─── Instagram Yayını ───
+    if (targets.includes('instagram')) {
+      const existingIg = await db.query.publishedInstagramPosts.findFirst({
+        where: eq(publishedInstagramPosts.processedId, article.id)
+      });
+
+      if (existingIg) {
+        log.info({ processedArticleId }, 'Instagram için zaten yayınlanmış, atlanıyor.');
+      } else {
+        if (!article.imagePath && !article.videoPath) {
+          throw new Error('Instagram yayını için görsel veya video zorunludur');
+        }
+
+        const caption = article.instagramCaption || article.tweetText;
+        const igResult = await postToInstagram(
+          caption,
+          (article.hashtags as string[]) ?? [],
+          (article.videoPath ?? article.imagePath) as string
         );
-        replyTweetId = replyResult.tweetId;
-      } catch (replyErr) {
-        log.warn(
-          { err: replyErr instanceof Error ? replyErr.message : replyErr },
-          'Link yorumu eklenemedi (kritik değil)',
-        );
+
+        // published_instagram_posts tablosuna kaydet
+        await db.insert(publishedInstagramPosts).values({
+          processedId: article.id,
+          igMediaId: igResult.igMediaId,
+          igPostUrl: igResult.igPostUrl,
+        });
+        log.info({ igMediaId: igResult.igMediaId, processedArticleId }, '✅ Instagram gönderisi yayınlandı');
       }
     }
-
-    // published_tweets tablosuna kaydet
-    await db.insert(publishedTweets).values({
-      processedId: article.id,
-      tweetId,
-      tweetUrl,
-      replyTweetId,
-    });
 
     // Durumu 'published' olarak güncelle
     await db
@@ -135,10 +190,10 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
 
     await updateDailyStats({ articlesPublished: 1 });
 
-    log.info({ tweetId, tweetUrl, processedArticleId }, '✅ Tweet yayınlandı');
+    log.info({ processedArticleId }, '✅ Makale yayınlama tamamlandı');
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    log.error({ err: errMsg, processedArticleId }, '❌ Tweet yayınlama başarısız');
+    log.error({ err: errMsg, processedArticleId }, '❌ Makale yayınlama başarısız');
 
     // Durumu 'failed' olarak işaretle
     await db

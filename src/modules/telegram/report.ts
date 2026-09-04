@@ -11,7 +11,7 @@ const log = createLogger('telegram:report');
  * Son 7 günün özetini Telegram'a gönderir
  */
 export async function sendWeeklyReport(): Promise<void> {
-  if (!env.TELEGRAM_HTTP_API || !env.TELEGRAM_CHAT_ID) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
     log.warn('Telegram API veya Chat ID eksik, rapor gönderilemiyor.');
     return;
   }
@@ -46,7 +46,7 @@ export async function sendWeeklyReport(): Promise<void> {
       `<b>Toplam Retweet:</b> ${total?.retweets || 0}\n\n` +
       `<i>AutoSocial Sistemi otonom olarak çalışmaya devam ediyor...</i> 🚀`;
 
-    const bot = new Telegraf(env.TELEGRAM_HTTP_API);
+    const bot = new Telegraf(env.TELEGRAM_BOT_TOKEN);
     await bot.telegram.sendMessage(env.TELEGRAM_CHAT_ID, message, { parse_mode: 'HTML' });
     
     log.info('Haftalık rapor Telegram\'a başarıyla gönderildi.');

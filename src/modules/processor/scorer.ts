@@ -30,8 +30,18 @@ export function scoreArticle(
   const sourceScore = reliabilityToScore(sourceReliability);
   const quality = calculateTitleQuality(item.title);
 
-  const total =
+  let total =
     freshness * 0.4 + keyword * 0.3 + sourceScore * 0.2 + quality * 0.1;
+
+  // Yabancı kaynaklardaki (EN) indirim/fırsat haberlerini filtrele
+  // Proje hedef kitlesi Türk kullanıcılar olduğu için global indirimlerin değeri yok
+  if (item.lang === 'en') {
+    const text = `${item.title} ${item.summary ?? ''}`.toLowerCase();
+    const dealKeywords = [' deal ', ' deals ', ' sale ', ' discount ', ' free ', '% off', ' bundle ', ' giveaway '];
+    if (dealKeywords.some(w => text.includes(w))) {
+      total = 0; // Skor sıfırlanır, AI işleme girmeden 'low_score' olarak elenir
+    }
+  }
 
   const breakdown: ScoreBreakdown = {
     total: Math.round(total * 100) / 100,
