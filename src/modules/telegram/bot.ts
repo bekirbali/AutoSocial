@@ -32,9 +32,8 @@ if (env.TELEGRAM_BOT_TOKEN) {
     }
 
     try {
-      let targets = ['x'];
-      if (platform === 'ig') targets = ['instagram'];
-      if (platform === 'all') targets = ['x', 'instagram'];
+      // Tekil haberler kural gereği istisnasız yalnızca X'e gider; Instagram toplu bülten (digest) içindir
+      const targets = ['x'];
 
       // 1. Veritabanında durumu 'approved' yap ve platform hedeflerini kaydet
       await db
@@ -51,10 +50,15 @@ if (env.TELEGRAM_BOT_TOKEN) {
         scheduledFor: publishAt.toISOString(),
       };
 
+      const existingJob = await publishQueue.getJob(`publish-${articleId}`);
+      if (existingJob) {
+        await existingJob.remove().catch(() => {});
+      }
+
       await publishQueue.add(
         `publish:${articleId}`,
         publishJobData,
-        { delay: delayMs, jobId: `publish-${articleId}` },
+        { delay: delayMs, jobId: `publish-${articleId}-${Date.now()}` },
       );
 
       // 3. Mesajı güncelle (butonları kaldır, onaylandı yaz)
@@ -366,30 +370,16 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
     return false;
   }
 
-  const buttons = env.ENABLE_INSTAGRAM
-    ? Markup.inlineKeyboard([
-        [
-          Markup.button.callback("🚀 X'e Hemen Yayınla", `pub:x:${data.articleId}`),
-          Markup.button.callback("🕒 Sıraya Al (X)", `queue:x:${data.articleId}`),
-        ],
-        [
-          Markup.button.callback("🚀 Özel: Tekil IG'ye de At", `pub:all:${data.articleId}`),
-        ],
-        [
-          Markup.button.callback('✏️ Düzenle', `edit_instruction`),
-          Markup.button.callback('❌ Reddet', `reject:${data.articleId}`),
-        ],
-      ])
-    : Markup.inlineKeyboard([
-        [
-          Markup.button.callback("🚀 X'e Hemen Yayınla", `pub:x:${data.articleId}`),
-          Markup.button.callback('🕒 Sıraya Al (X)', `queue:x:${data.articleId}`),
-        ],
-        [
-          Markup.button.callback('✏️ Düzenle', `edit_instruction`),
-          Markup.button.callback('❌ Reddet', `reject:${data.articleId}`)
-        ],
-      ]);
+  const buttons = Markup.inlineKeyboard([
+    [
+      Markup.button.callback("🚀 X'e Hemen Yayınla", `pub:x:${data.articleId}`),
+      Markup.button.callback("🕒 Sıraya Al (X)", `queue:x:${data.articleId}`),
+    ],
+    [
+      Markup.button.callback('✏️ Düzenle', `edit_instruction`),
+      Markup.button.callback('❌ Reddet', `reject:${data.articleId}`),
+    ],
+  ]);
 
   let caption = `📰 <b>YENİ HABER ONAYI BEKLİYOR</b>\n\n`
     + `<b>Kategori:</b> ${data.category || 'Belirsiz'}\n`
@@ -421,24 +411,109 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
   }
 
   try {
+    let sentMsg;
     if (data.imagePath) {
-      await bot.telegram.sendPhoto(
+      sentMsg = await bot.telegram.sendPhoto(
         env.TELEGRAM_CHAT_ID,
         { source: data.imagePath },
         { caption, parse_mode: 'HTML', ...buttons }
       );
     } else {
-      await bot.telegram.sendMessage(
+      sentMsg = await bot.telegram.sendMessage(
         env.TELEGRAM_CHAT_ID,
         caption,
         { parse_mode: 'HTML', ...buttons }
       );
     }
+
+    // Admin panel senkronizasyonu için mesaj ID ve caption'ı Redis'e kaydet
+    if (sentMsg && sentMsg.message_id) {
+      try {
+        const { redis } = await import('../../lib/redis.js');
+        await redis.set(`tg:msg:${data.articleId}`, sentMsg.message_id, 'EX', 14 * 86400);
+        await redis.set(`tg:caption:${data.articleId}`, caption, 'EX', 14 * 86400);
+      } catch (redisErr: any) {
+        log.warn({ err: redisErr.message }, 'Redis tg:msg kaydı yapılamadı');
+      }
+    }
+
     log.debug({ articleId: data.articleId }, 'Onay mesajı Telegram\'a gönderildi');
     return true;
   } catch (error) {
     log.error({ err: error instanceof Error ? error.message : error }, 'Telegram onay mesajı gönderilemedi');
     return false;
+  }
+}
+
+/**
+ * Admin panelden bir işlem yapıldığında (Hemen At / Sıraya Al / Pas Geç / Düzenle)
+ * Telegram'daki onay mesajının durumunu ve butonlarını günceller
+ */
+export async function syncArticleStatusToTelegram(
+  articleId: string,
+  action: 'published' | 'scheduled' | 'rejected' | 'updated',
+  details?: { scheduledAt?: Date; newText?: string }
+): Promise<void> {
+  if (!bot || !env.TELEGRAM_CHAT_ID) return;
+
+  try {
+    const { redis } = await import('../../lib/redis.js');
+    const msgIdStr = await redis.get(`tg:msg:${articleId}`);
+    if (!msgIdStr) {
+      log.debug({ articleId }, 'Bu makale için Telegram mesaj ID kaydı bulunamadı');
+      return;
+    }
+
+    const messageId = parseInt(msgIdStr, 10);
+    const originalCaption = (await redis.get(`tg:caption:${articleId}`)) || '';
+
+    let statusText = '';
+    if (action === 'published') {
+      statusText = '✅ <b>YAYINLANDI (Admin Panel)</b>';
+    } else if (action === 'scheduled') {
+      const timeStr = details?.scheduledAt ? details.scheduledAt.toLocaleTimeString('tr-TR') : '';
+      statusText = `✅ <b>SIRAYA ALINDI (Admin Panel)</b> (Planlanan: ${timeStr})`;
+    } else if (action === 'rejected') {
+      statusText = '❌ <b>REDDEDİLDİ (Admin Panel)</b>';
+    } else if (action === 'updated') {
+      statusText = '✏️ <b>METİN DÜZENLENDİ (Admin Panel)</b>';
+    }
+
+    // 1. Mesajın altındaki butonları kaldır
+    await bot.telegram.editMessageReplyMarkup(
+      env.TELEGRAM_CHAT_ID,
+      messageId,
+      undefined,
+      undefined
+    ).catch(() => {});
+
+    // 2. Caption veya Text'i yeni durumla güncelle
+    let newCaption = originalCaption ? `${originalCaption}\n\n${statusText}` : statusText;
+    if (newCaption.length > 1020) {
+      newCaption = newCaption.substring(0, 1015) + '...';
+    }
+
+    try {
+      await bot.telegram.editMessageCaption(
+        env.TELEGRAM_CHAT_ID,
+        messageId,
+        undefined,
+        newCaption,
+        { parse_mode: 'HTML' }
+      );
+    } catch {
+      await bot.telegram.editMessageText(
+        env.TELEGRAM_CHAT_ID,
+        messageId,
+        undefined,
+        newCaption,
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
+    }
+
+    log.info({ articleId, action, messageId }, 'Telegram mesajı admin panel aksiyonuyla güncellendi');
+  } catch (err: any) {
+    log.warn({ err: err.message, articleId }, 'Telegram senkronizasyonu tamamlanamadı (önemsiz)');
   }
 }
 

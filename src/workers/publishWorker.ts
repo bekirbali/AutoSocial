@@ -9,6 +9,7 @@ import { postToInstagram } from '../modules/publisher/instagram.js';
 import { withRateLimit } from '../modules/publisher/rateLimiter.js';
 import { getTodayPublishedCount } from '../modules/publisher/scheduler.js';
 import { updateDailyStats } from '../modules/analytics/dailyStats.js';
+import { syncArticleStatusToTelegram } from '../modules/telegram/bot.js';
 import { env } from '../config/env.js';
 
 const log = createLogger('worker:publish');
@@ -203,6 +204,9 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
       .update(processedArticles)
       .set(updates)
       .where(eq(processedArticles.id, article.id));
+
+    // Telegram onay mesajını yayınlandı olarak güncelle
+    syncArticleStatusToTelegram(article.id, 'published').catch(() => {});
 
     await updateDailyStats({ articlesPublished: 1 });
 

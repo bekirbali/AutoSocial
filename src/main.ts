@@ -6,10 +6,7 @@ import { closeQueues } from './lib/queue.js';
 import { env } from './config/env.js';
 import { sources } from './db/schema.js';
 import { SOURCES } from './config/sources.js';
-import { createServer } from 'node:http';
-import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createAdminApp } from './server/app.js';
 
 // Workers
 import { startFetchWorker } from './workers/fetchWorker.js';
@@ -87,39 +84,11 @@ async function main() {
   await bootstrapPublishQueue();
   await startTelegramBot();
 
-  // ─── 6. Statik Dosya Sunucusu (Instagram Görselleri İçin) ─────────────────
-  const PORT = process.env.PORT || 3000;
-  const server = createServer(async (req, res) => {
-    log.info({ method: req.method, url: req.url, headers: req.headers }, '🌐 Image Server Request');
-    if (req.url?.startsWith('/images/') || req.url?.startsWith('/videos/')) {
-      const isVideo = req.url.startsWith('/videos/');
-      const fileName = req.url.replace(isVideo ? '/videos/' : '/images/', '').replace(/\.\.\//g, ''); // basit güvenlik
-      const filePath = join(process.cwd(), 'output', isVideo ? 'videos' : 'images', fileName);
-      try {
-        const stats = await stat(filePath);
-        if (stats.isFile()) {
-          const ext = fileName.split('.').pop()?.toLowerCase();
-          let contentType = 'application/octet-stream';
-          if (ext === 'jpeg' || ext === 'jpg') contentType = 'image/jpeg';
-          else if (ext === 'webp') contentType = 'image/webp';
-          else if (ext === 'mp4') contentType = 'video/mp4';
-
-          res.writeHead(200, { 'Content-Type': contentType });
-          createReadStream(filePath).pipe(res);
-          log.info({ filePath, contentType }, '✅ Media served successfully');
-          return;
-        }
-      } catch (err) {
-        log.warn({ filePath, err: (err as any).message }, '❌ Media file not found or read error');
-      }
-    }
-    log.warn({ url: req.url }, '❌ Media Server 404');
-    res.writeHead(404);
-    res.end('Not found');
-  });
-
-  server.listen(PORT, () => {
-    log.info(`🌐 Statik dosya sunucusu başlatıldı: port ${PORT} (Public URL için)`);
+  // ─── 6. Express Sunucusu & Admin API & Medya Servisi ───────────────────────
+  const PORT = Number(process.env.PORT) || 3000;
+  const app = createAdminApp();
+  const server = app.listen(PORT, () => {
+    log.info(`🌐 Admin Panel ve Medya Sunucusu aktif: http://localhost:${PORT}/admin`);
   });
 
   // ─── 7. Daemon Modu — Kapanma ─────────────────────────────────────────────

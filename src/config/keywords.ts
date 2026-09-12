@@ -168,6 +168,9 @@ export const KEYWORD_BLACKLIST: string[] = [
   'politik', 'siyaset', 'seçim', 'hükümet',
   // Diğer
   'casino', 'gambling', 'crypto scam', 'nft scam',
+  // Sitelerin kendi ücretli bülten / haftalık özet ve promosyon yazıları
+  'this week on', 'weekly roundup', 'weekly digest', 'weekend digest',
+  'newsletter', 'premium:', 'subscriber only', 'subscribers only',
 ];
 
 // ─── KATEGORİ RENKLERİ (Sharp görsel üretiminde kullanılır) ─────────────────

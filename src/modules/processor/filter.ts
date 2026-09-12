@@ -33,8 +33,10 @@ export function filterArticle(item: FetchedItem): FilterResult {
     return { passed: false, reason: `domain_blacklisted:${domain}` };
   }
 
-  // 4. Anahtar kelime kara listesi (başlık)
-  const blacklisted = KEYWORD_BLACKLIST.find((kw) => titleLower.includes(kw));
+  // 4. Anahtar kelime kara listesi (başlık veya URL)
+  const blacklisted = KEYWORD_BLACKLIST.find(
+    (kw) => titleLower.includes(kw) || urlLower.includes(kw),
+  );
   if (blacklisted) {
     return { passed: false, reason: `keyword_blacklisted:${blacklisted}` };
   }

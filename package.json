@@ -7,6 +7,8 @@
     "dev": "chcp 65001 >NUL && tsx watch src/main.ts",
     "start": "node dist/main.js",
     "build": "tsc",
+    "build:client": "pnpm --filter client build",
+    "build:all": "pnpm run build:client && tsc",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -22,8 +24,10 @@
     "axios": "^1.7.9",
     "bullmq": "^5.34.2",
     "cheerio": "^1.0.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.3",
+    "express": "^5.2.1",
     "ioredis": "^5.4.2",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
@@ -36,6 +40,8 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.2",
     "drizzle-kit": "^0.30.1",
     "tsx": "^4.19.2",

@@ -91,4 +91,4 @@ Eksik: DATABASE_URL, REDIS_URL (Canlıya çıkarken Railway için eklenecek, şu
 - **Thread (Zincir) KULLANILMIYOR:** X'te tüm içerikler tekil, vurucu ve bağımsız bir tweettir. "Detaylar zincirde", "detaylar aşağıda", "devamı flood'da" gibi ifadeler KESİNLİKLE YASAKTIR. Tüm hap bilgi ve kanca tek tweette toplanır. (Thread desteği ileride X Premium alınınca tekrar değerlendirilecektir).
 - Link veya kaynak ikinci bir tweet (thread/reply) olarak **EKLENMİYOR**. Gerekirse içerikte kaynak adı (Örn: "Tom's Hardware'in haberine göre...") veriliyor.
 - Random jitter: ±1-12 dakika sapma (bot tespitine karşı)
-- Min skor eşiği: 70/100 (freshness %40 + keyword %30 + kaynak %20 + kalite %10)
+- Min skor eşiği: 85/100 (freshness %40 + keyword %30 + kaynak %20 + kalite %10)
