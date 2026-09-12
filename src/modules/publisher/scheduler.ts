@@ -9,7 +9,7 @@ const log = createLogger('publisher:scheduler');
 
 // Günlük yayın zaman dilimleri (saat, 24h format)
 const TWEET_SLOTS = [
-  { start: 7, end: 9 },    // Sabah
+  // { start: 7, end: 9 },    // Sabah (Şimdilik iptal - sistem 12'den önce uyandırılmıyor)
   { start: 12, end: 14 },  // Öğle
   { start: 18, end: 20 },  // Akşam
   { start: 21, end: 23 },  // Gece
@@ -130,7 +130,7 @@ export async function getNextPublishTime(): Promise<{
   if (todayCount >= env.MAX_TWEETS_PER_DAY) {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(7, 0, 0, 0);
+    tomorrow.setHours(12, 0, 0, 0);
     const waitMs = tomorrow.getTime() - Date.now();
     return { canPublish: false, waitMs, reason: 'daily_limit' };
   }

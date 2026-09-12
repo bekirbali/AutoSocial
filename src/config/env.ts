@@ -30,6 +30,7 @@ const EnvSchema = z.object({
   TELEGRAM_CHAT_ID: z.string().min(1, 'Telegram chat ID (kanal/grup) gerekli'),
 
   // Instagram Graph API
+  ENABLE_INSTAGRAM: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
   IG_ACCESS_TOKEN: z.string().optional(),
   IG_ACCOUNT_ID: z.string().optional(),
 

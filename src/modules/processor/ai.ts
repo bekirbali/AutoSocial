@@ -9,7 +9,7 @@ const log = createLogger('processor:ai');
 // Gemini istemcisi — modüle yüklendiğinde bir kez başlatılır
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
 export interface TweetGenerationResult {
   tweetText: string;
@@ -28,32 +28,33 @@ export interface InstagramCaptionResult {
 }
 
 /**
- * Kategori bazlı prompt template'leri
- * Her kategori için özelleştirilmiş açılış cümlesi ve ton
+ * Kategori bazlı odak ve kanca rehberleri
  */
-const CATEGORY_PROMPTS: Record<ArticleCategory, { opening: string; tones: string[] }> = {
-  cpu:         { opening: 'İşlemci dünyasında dikkat çekici gelişme:', tones: ['teknik ve bilgilendirici', 'analitik', 'derinlemesine'] },
-  gpu:         { opening: 'Ekran kartı haberlerinde son dakika:', tones: ['heyecanlı ve teknik', 'enerjik', 'rekabetçi'] },
-  ram:         { opening: 'Bellek teknolojilerinde yeni gelişme:', tones: ['teknik ve net', 'kısa ve öz', 'bilgilendirici'] },
-  storage:     { opening: 'Depolama dünyasında önemli haber:', tones: ['bilgilendirici', 'hızlı ve net', 'kıyaslamalı'] },
-  motherboard: { opening: 'Anakart dünyasında dikkat çeken gelişme:', tones: ['teknik ve detaylı', 'geniş açılı', 'merak uyandırıcı'] },
-  cooling:     { opening: 'Soğutma teknolojilerinde yenilik:', tones: ['meraklı ve bilgilendirici', 'buz gibi net', 'dikkat çekici'] },
-  peripherals: { opening: 'PC çevre birimlerinde öne çıkan haber:', tones: ['dinamik ve çekici', 'oyuncu odaklı', 'akıcı'] },
-  psu:         { opening: 'Güç kaynağı dünyasında yeni gelişme:', tones: ['bilgilendirici ve güvenilir', 'net ve sağlam', 'ciddi'] },
-  case:        { opening: 'PC kasa dünyasında ilgi çekici haber:', tones: ['dengeli', 'estetik odaklı', 'pratik'] },
-  gaming:      { opening: 'Oyun dünyasında son dakika:', tones: ['enerjik ve dinamik', 'heyecanlı', 'oyuncu jargonuyla esprili'] },
-  deals:       { opening: '🔥 FIRSAT ALARMI:', tones: ['acil ve pratik', 'hemen al tarzı', 'dikkat çekici'] },
-  software:    { opening: 'Sürücü ve yazılım güncellemelerinde önemli haber:', tones: ['teknik ve net', 'kısa ve uyarıcı', 'rehberleyici'] },
-  general:     { opening: 'Donanım dünyasında öne çıkan haber:', tones: ['dengeli ve bilgilendirici', 'samimi', 'profesyonel'] },
+const CATEGORY_GUIDES: Record<ArticleCategory, { angle: string; hookHint: string }> = {
+  cpu:         { angle: 'İşlemci performansı, mimari yenilikler, benchmark sonuçları ve pazar dengesi', hookHint: 'performans sıçraması, çekirdek/IPC farkı veya rakibe meydan okuma' },
+  gpu:         { angle: 'FPS artışı, VRAM kapasitesi, güç tüketimi ve fiyat/performans', hookHint: 'oyuncuların FPS/fiyat dengesi, mimari kırılma veya yeni teknolojiler' },
+  ram:         { angle: 'DDR5 frekansları, gecikme süreleri (CL) ve sistem stabilitesi', hookHint: 'hız ve kararlılık sınırları' },
+  storage:     { angle: 'PCIe 5 okuma/yazma hızları, depolama ömrü ve fiyat düşüşleri', hookHint: 'hız veya kapasite/fiyat fırsatı' },
+  motherboard: { angle: 'VRM kalitesi, yeni soket/chipset özellikleri ve PCIe hatları', hookHint: 'yeni sistem kuracakların gözden kaçırmaması gereken detay' },
+  cooling:     { angle: 'Sıvı/hava soğutma performansı, termal verimlilik ve sessizlik', hookHint: 'yüksek sıcaklıklara kesin çözüm' },
+  peripherals: { angle: 'OLED/240Hz+ monitörler, gecikmesiz fare/klavye ve ergonomi', hookHint: 'oyun veya çalışma deneyimini değiştiren donanım' },
+  psu:         { angle: 'ATX 3.0/3.1 standartları, güç güvenliği ve verimlilik', hookHint: 'yeni nesil sistemlerin güç gereksinimi' },
+  case:        { angle: 'Hava akışı (airflow), kablo yönetimi ve kompakt tasarım', hookHint: 'estetik ve soğutma dengesi' },
+  gaming:      { angle: 'Oyun performansı, motor optimizasyonları ve sektörün büyük kırılmaları', hookHint: 'oyun dünyasında taşları yerinden oynatan gelişme' },
+  deals:       { angle: 'Kaçırılmayacak fiyat düşüşü ve fiyat/performans oranı', hookHint: 'nadir görülen dip fiyat fırsatı' },
+  software:    { angle: 'Sürücü güncellemeleri, optimizasyon yamaları ve açık kaynak araçlar', hookHint: 'sistem performansını doğrudan artıran yazılım adımı' },
+  ai:          { angle: 'Geliştiricilere hız katan modeller, açık kaynak LLM\'ler ve donanım gereksinimleri', hookHint: 'yapay zekada ezber bozan veya işleri kolaylaştıran hamle' },
+  mobile:      { angle: 'Kamera yetenekleri, işlemci (Apple Silicon/Snapdragon) performansı, pil/şarj ömrü, yapay zeka özellikleri ve kullanıcı deneyimi', hookHint: 'akıllı telefon pazarındaki rekabet, kamera devrimi veya günlük kullanımı değiştiren yeni özellikler' },
+  general:     { angle: 'Teknoloji ekosistemi, donanım endüstrisi ve geleceğin standartları', hookHint: 'sektörün geleceğini şekillendiren kritik gelişme' },
 };
 
 /**
- * Gemini 1.5 Flash ile Türkçe tweet üret
+ * Gemini ile Türkçe yüksek etkileşimli küratör tweeti üret
  *
  * @param title - Orijinal haber başlığı (EN veya TR)
  * @param summary - Haber özeti (varsa)
- * @param sourceName - Kaynak adı (tweet'e eklenir)
- * @param category - Haber kategorisi (prompt template seçimi için)
+ * @param sourceName - Kaynak adı
+ * @param category - Haber kategorisi
  */
 export async function generateTweet(
   title: string,
@@ -62,39 +63,35 @@ export async function generateTweet(
   category: ArticleCategory,
   videoPath?: string,
 ): Promise<TweetGenerationResult> {
-  const categoryConfig = CATEGORY_PROMPTS[category];
-  const sourceInfo = summary ? `\n\nÖzet: ${summary.substring(0, 400)}` : '';
-  
-  const selectedTone = categoryConfig.tones[Math.floor(Math.random() * categoryConfig.tones.length)];
-  const isLongContent = summary && summary.length > 250;
+  const guide = CATEGORY_GUIDES[category] || CATEGORY_GUIDES.general;
+  const sourceInfo = summary ? `\n\nİçerik Detayları: ${summary.substring(0, 450)}` : '';
 
-  const prompt = `Sen bir PC donanım ve teknoloji haber hesabının sosyal medya editörüsün.
-Aşağıdaki haber için X (Twitter) için Türkçe bir tweet ${isLongContent ? '(veya haber detaylıysa 2-3 tweetlik bir zincir/thread)' : ''} yaz.
+  const prompt = `Sen X'te (Twitter) yüz binlerce teknoloji meraklısı, yazılımcı ve donanım tutkunu tarafından takip edilen, kuru ajans haberciliği YAPMAYAN, samimi ve uzman bir teknoloji küratörüsün.
+
+GÖREV: Aşağıdaki içeriği analiz et ve X'te yüksek etkileşim, retweet ve yer imi (bookmark) alacak, değer odaklı ve hap bilgi içeren tek ve vurucu bir Türkçe tweet hazırla.
 
 HABER BAŞLIĞI: ${title}
 KAYNAK: ${sourceName}${sourceInfo}
+KATEGORİ ODAĞI: ${guide.angle} (${guide.hookHint})
 
-KURALLAR:
-1. Tweet Türkçe olmalı (başlık İngilizce bile olsa Türkçe'ye çevir ve özetle)
-2. Ana mesaj maksimum 240 karakter olmalı
-3. Doğrudan konuya gir. "X dünyasında son dakika:", "Y konusunda gelişme:" gibi robotik/yapay giriş kalıplarını KESİNLİKLE KULLANMA. İnsansı ve direkt bir giriş yap.
-4. Ton: ${selectedTone}
-5. HİÇBİR ŞEKİLDE HASHTAG KULLANMA (# sembolü içermesin, profesyonel dursun)
-6. Clickbait olmamalı — somut bilgi ver
-7. Okuyucuyu merak ettiren ama yanıltıcı olmayan bir anlatım kullan
-8. Emoji: kategori "${category}" için ${category === 'deals' ? '1-2 emoji (🔥💰)' : '0-1 emoji'}
-${isLongContent ? '9. Haber çok detaylıysa metni bölerek "isThread": true yap ve "threadTweets" dizisine diğer tweetleri ekle. Aksi halde tek tweet dön.' : ''}
+KRİTİK İÇERİK KURALLARI:
+1. KURUMSAL VE AJANS DİLİNİ TERK ET: "X şirketi Y ürününü duyurdu", "...açıklandı", "...bildirildi" gibi monoton ajans kalıplarını KESİNLİKLE KULLANMA. Doğrudan konunun özüne giren, dinamik ve insansı bir dil kullan.
+2. GÜÇLÜ KANCA (HOOK): İlk satır akışta kaydırmayı durduran (scroll-stopper) nitelikte olsun. Okuyucunun "Burada ne oluyor?" demesini sağla.
+3. SOMUT DEĞER VE HAP BİLGİ: Varsa sayısal verileri (FPS, watt, fiyat, frekans, çekirdek, mimari detay) doğrudan paylaş. Okuyucu 5 saniyede net bir bilgi alsın.
+4. ETKİLEŞİM / TARTIŞMA ÇAĞRISI: Tweetin sonuna okuyucuyu yorum yapmaya sevk edecek zekice, kısa bir soru veya çarpıcı bir kapanış ekle (Örn: "Sizce bu adım pazar dengelerini değiştirir mi?", "Bu fiyata tercih eder miydiniz?").
+5. KARAKTER SINIRI: Tweet maksimum 240-270 karakter olmalıdır. Tüm kurgu, kanca ve hap bilgi bu tek tweette yer almalıdır.
+6. KESİNLİKLE HASHTAG KULLANMA: Metin içinde hiçbir '#' sembolü yer almasın.
+7. YERİNDE EMOJİ: En fazla 1-2 adet (ör. ⚡, 🚀, 💡, 🔥), göz yormayan yerinde emoji kullan.
+8. KESİNLİKLE YASAKLI YÖNLENDİRME KALIPLARI: "Detaylar zincirde", "detaylar aşağıda", "devamı flood'da", "zincirde", "thread", "flood" gibi devam/yönlendirme ifadelerini KESİNLİKLE KULLANMA. Bu tek ve bağımsız bir tweettir, devamı yoktur.
 
-ÇIKTI FORMATI (JSON):
+ÇIKTI FORMATI (YALNIZCA GEÇERLİ JSON):
 {
-  "tweetText": "İlk tweet veya tek tweet...",
-  "translatedTitle": "Haber başlığının Türkçe çevirisi (Görselde kullanılacak, maks 60 karakter)",
-  "tone": "...",
-  "isThread": ${isLongContent ? 'true/false' : 'false'},
-  "threadTweets": ${isLongContent ? '["İkinci tweet (varsa)...", "Üçüncü tweet (varsa)..."]' : '[]'}
+  "tweetText": "Vurucu tek tweet (kanca + hap bilgi + tartışma sorusu)",
+  "translatedTitle": "Görsel kart için kısa, vurucu Türkçe başlık (maks 55 karakter)",
+  "tone": "küratör"
 }
 
-Sadece JSON döndür, başka hiçbir şey yazma.`;
+Sadece JSON döndür, markdown formatı dışında hiçbir şey yazma.`;
 
   try {
     log.debug({ title, category, hasVideo: !!videoPath }, 'Gemini tweet üretiliyor');
@@ -108,8 +105,6 @@ Sadece JSON döndür, başka hiçbir şey yazma.`;
         displayName: 'AutoSocial Video',
       });
       
-      // Wait for ACTIVE state if needed (usually fast for short videos, but good practice)
-      // For simplicity, we just pass it immediately. Flash 3.5 can handle it.
       contentArgs = [
         prompt,
         {
@@ -134,17 +129,17 @@ Sadece JSON döndür, başka hiçbir şey yazma.`;
       tweetText: string;
       translatedTitle?: string;
       tone: string;
-      isThread?: boolean;
-      threadTweets?: string[];
     };
 
     // Güvenlik kontrolleri
-    const tweetText = sanitizeTweetText(parsed.tweetText);
+    let tweetText = sanitizeTweetText(parsed.tweetText);
+    // Yapay zeka kaçaklarını önlemek için yönlendirme kalıplarını temizle
+    tweetText = tweetText
+      .replace(/\s*detaylar\s+(zincirde|aşağıda|flood'da|yorumda|yorumlarda)[.!?\s👇]*/gi, '')
+      .replace(/\s*devamı\s+(zincirde|aşağıda|flood'da|yorumda|yorumlarda)[.!?\s👇]*/gi, '')
+      .trim();
+
     const hashtags: string[] = []; // Kullanıcı isteği üzerine hashtag'ler tamamen kaldırıldı
-    
-    const threadTweets = parsed.isThread && parsed.threadTweets
-      ? parsed.threadTweets.map(sanitizeTweetText).filter(t => t.length > 0)
-      : undefined;
 
     // Karakter uzunluğu kontrolü
     if (tweetText.length > 280) {
@@ -157,7 +152,7 @@ Sadece JSON döndür, başka hiçbir şey yazma.`;
     const finalTweet = tweetText.substring(0, 280);
 
     log.info(
-      { title, category, tweetLength: finalTweet.length, isThread: parsed.isThread },
+      { title, category, tweetLength: finalTweet.length },
       'Tweet üretildi',
     );
 
@@ -165,9 +160,9 @@ Sadece JSON döndür, başka hiçbir şey yazma.`;
       tweetText: finalTweet,
       translatedTitle: parsed.translatedTitle || title,
       hashtags,
-      tone: parsed.tone ?? selectedTone,
-      isThread: !!parsed.isThread,
-      threadTweets,
+      tone: parsed.tone ?? 'küratör',
+      isThread: false,
+      threadTweets: undefined,
     };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
@@ -191,10 +186,10 @@ export async function generateInstagramCaption(
   category: ArticleCategory,
   videoPath?: string,
 ): Promise<InstagramCaptionResult> {
-  const categoryConfig = CATEGORY_PROMPTS[category];
+  const guide = CATEGORY_GUIDES[category] || CATEGORY_GUIDES.general;
   const sourceInfo = summary ? `\n\nÖzet: ${summary.substring(0, 400)}` : '';
   
-  const selectedTone = categoryConfig.tones[Math.floor(Math.random() * categoryConfig.tones.length)];
+  const selectedTone = 'bilgilendirici ve etkileşim odaklı';
 
   const prompt = `Sen bir PC donanım ve teknoloji haber hesabının sosyal medya editörüsün.
 Aşağıdaki haber için Instagram'a uygun, takipçilerle etkileşim kuran Türkçe bir açıklama (caption) yaz.
@@ -203,7 +198,7 @@ HABER BAŞLIĞI: ${title}
 KAYNAK: ${sourceName}${sourceInfo}
 
 KURALLAR:
-1. Metin Türkçe olmalı (başlık İngilizce bile olsa Türkçe'ye çevir ve özetle).
+1. Metin Türkçe olmalı (başlık İngilizce veya Almanca gibi yabancı dillerde olsa bile Türkçe'ye çevir ve özetle).
 2. Metin uzun olabilir, detayları okuyucuya sıkmadan aktar (2-3 paragraf olabilir).
 3. "X dünyasında son dakika:", "Y konusunda gelişme:" gibi robotik giriş kalıplarını KULLANMA. İnsansı ve direkt bir giriş yap.
 4. Ton: ${selectedTone}
@@ -280,6 +275,76 @@ Sadece JSON döndür, başka hiçbir şey yazma.`;
     const errMsg = error instanceof Error ? error.message : String(error);
     log.error({ err: errMsg, title }, 'Gemini Instagram caption üretimi başarısız');
     throw new Error(`AI Instagram caption üretimi başarısız: ${errMsg}`);
+  }
+}
+
+export interface DigestArticleInput {
+  title: string;
+  category?: string;
+  sourceName?: string;
+  tweetText?: string;
+}
+
+/**
+ * Günlük bülten (Digest) için tüm haberleri kapsayan ortak Instagram açıklaması üretir.
+ */
+export async function generateDigestCaption(
+  articles: DigestArticleInput[],
+  digestType: 'noon' | 'evening' | 'manual',
+): Promise<string> {
+  const bultenAd =
+    digestType === 'noon'
+      ? 'Öğle Bülteni'
+      : digestType === 'evening'
+      ? 'Akşam Bülteni'
+      : 'Günün Teknoloji Özeti';
+
+  const articlesListText = articles
+    .map((a, i) => `${i + 1}. [${a.sourceName || 'Kaynak'}] ${a.title}${a.tweetText ? ` (Özet: ${a.tweetText})` : ''}`)
+    .join('\n');
+
+  const prompt = `Sen "DonanımPost" teknoloji yayıncılığı markasının baş editörüsün.
+GÖREV: Bugün Instagram Reels'ta yayınlanacak olan toplu teknoloji bülteni videosu için yüksek etkileşimli, merak uyandıran ve okunaklı bir Türkçe Instagram açıklaması (caption) hazırla.
+
+BÜLTEN TÜRÜ: ${bultenAd}
+BÜLTENDE YER ALAN HABERLER:
+${articlesListText}
+
+KURALLAR:
+1. Başlangıç: Vurucu bir başlık (örn: "⚡️ DonanımPost ${bultenAd}" veya "📌 Günün Öne Çıkan Teknoloji Haberleri").
+2. Maddeler: Bültendeki her haberi numaralandırılmış emojiyle (1️⃣, 2️⃣, 3️⃣...) 1'er satırlık net, merak uyandıran ve hap bir Türkçe cümleyle özetle.
+3. Etkileşim Çağrısı (CTA): Okuyuculara samimi bir soru sor (örn: "💬 Sizin günün en çok dikkatinizi çeken haberi hangisi oldu? Yorumlarda buluşalım!").
+4. Marka ve Takip Daveti: DonanımPost'u takip etmeye davet et.
+5. Hashtag: 5-8 adet en popüler teknoloji etiketi ekle (#donanım #teknoloji #pc #ekrankartı #oyun #reels vb.).
+6. "AutoSocial" kelimesini ASLA kullanma; marka adı kesinlikle "DonanımPost"tur.
+
+ÇIKTI FORMATI:
+Sadece aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
+{
+  "caption": "Açıklama metni buraya..."
+}`;
+
+  try {
+    const result = await flashModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+    const responseText = result.response.text().trim();
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.caption) {
+        log.info({ digestType, articleCount: articles.length }, 'Bülten Instagram caption üretildi');
+        return parsed.caption;
+      }
+    }
+
+    // JSON parse edilemezse doğrudan metni temizle ve döndür
+    return responseText.replace(/```json|```/g, '').trim();
+  } catch (err: any) {
+    log.error({ err: err.message }, 'Gemini bülten caption üretimi başarısız, şablon fallback kullanılıyor');
+    // Fallback caption
+    const bullets = articles.map((a, i) => `${i + 1}️⃣ ${a.title}`).join('\n');
+    return `⚡️ DonanımPost ${bultenAd}\n\n${bullets}\n\n💬 Günün en çok dikkatinizi çeken haberi hangisi oldu? Yorumlarda konuşalım!\n\n#donanım #teknoloji #donanumpost #reels`;
   }
 }
 

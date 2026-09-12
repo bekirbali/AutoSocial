@@ -89,7 +89,9 @@ export const processedArticles = pgTable(
     status: text('status').default('pending').notNull(),
     // 'pending' | 'approved' | 'rejected' | 'queued' | 'published' | 'failed'
     platformTargets: text('platform_targets').array(), // örn: ['x', 'instagram']
+    translatedTitle: text('translated_title'),
     instagramCaption: text('instagram_caption'),
+    includedInDigest: boolean('included_in_digest').default(false).notNull(),
     rejectionReason: text('rejection_reason'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`NOW()`)
@@ -157,6 +159,35 @@ export const publishedInstagramPosts = pgTable(
   ],
 );
 
+// ─── INSTAGRAM TOPLU HABER BÜLTENLERİ ───────────────────────────────────────
+
+export const instagramDigests = pgTable(
+  'instagram_digests',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    type: text('type').notNull(), // 'noon' | 'evening' | 'manual'
+    articleIds: uuid('article_ids').array().notNull(),
+    videoPath: text('video_path').notNull(),
+    caption: text('caption').notNull(),
+    status: text('status').default('pending').notNull(),
+    // 'pending' | 'approved' | 'published' | 'rejected' | 'failed'
+    igMediaId: text('ig_media_id'),
+    igPostUrl: text('ig_post_url'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`NOW()`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`NOW()`)
+      .notNull(),
+  },
+  (t) => [
+    index('instagram_digests_status_idx').on(t.status),
+    index('instagram_digests_created_at_idx').on(t.createdAt),
+  ],
+);
+
 // ─── SİSTEM LOGLARI ──────────────────────────────────────────────────────────
 
 export const systemLogs = pgTable(
@@ -212,6 +243,9 @@ export type NewPublishedTweet = typeof publishedTweets.$inferInsert;
 
 export type PublishedInstagramPost = typeof publishedInstagramPosts.$inferSelect;
 export type NewPublishedInstagramPost = typeof publishedInstagramPosts.$inferInsert;
+
+export type InstagramDigest = typeof instagramDigests.$inferSelect;
+export type NewInstagramDigest = typeof instagramDigests.$inferInsert;
 
 export type SystemLog = typeof systemLogs.$inferSelect;
 export type NewSystemLog = typeof systemLogs.$inferInsert;

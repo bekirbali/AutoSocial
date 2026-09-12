@@ -6,6 +6,7 @@ import { processedArticles, rawArticles } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { publishQueue, type PublishJobData } from '../../lib/queue.js';
 import { getNextPublishSlot } from '../../scheduler/cron.js';
+import { existsSync } from 'fs';
 
 const log = createLogger('telegram:bot');
 
@@ -119,6 +120,79 @@ if (env.TELEGRAM_BOT_TOKEN) {
     }
   });
 
+  // ─── INSTAGRAM DIGEST ACTIONS & COMMANDS ────────────────────────────────────
+
+  // Bülten Onaylama veya Pas Geçme aksiyonu
+  bot.action(/^digest:(pub|rej):(.+)$/, async (ctx) => {
+    const action = ctx.match[1];
+    const digestId = ctx.match[2];
+    if (!digestId) {
+      await ctx.answerCbQuery('Hatalı Digest ID');
+      return;
+    }
+
+    try {
+      if (action === 'pub') {
+        await ctx.answerCbQuery('Instagram\'a yükleniyor, lütfen bekleyin...');
+        const { publishDigest } = await import('../publisher/digestManager.js');
+        await publishDigest(digestId);
+
+        const currentCaption =
+          ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message
+            ? ctx.callbackQuery.message.caption
+            : '';
+        await ctx.editMessageCaption(
+          `${currentCaption}\n\n✅ <b>INSTAGRAM'A REELS OLARAK YAYINLANDI!</b>`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      } else {
+        const { rejectDigest } = await import('../publisher/digestManager.js');
+        await rejectDigest(digestId);
+
+        const currentCaption =
+          ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message
+            ? ctx.callbackQuery.message.caption
+            : '';
+        await ctx.editMessageCaption(
+          `${currentCaption}\n\n❌ <b>BÜLTEN İPTAL EDİLDİ / PAS GEÇİLDİ</b>`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+        await ctx.answerCbQuery('Bülten iptal edildi.');
+      }
+    } catch (err: any) {
+      log.error({ err: err.message, digestId }, 'Bülten aksiyon hatası');
+      await ctx.reply(`❌ Bülten işlemi sırasında hata oluştu: ${err.message}`);
+    }
+  });
+
+  // Manuel /bulten komutu — istenildiği an bülten üretip onaya sunar
+  bot.command(['bulten', 'digest'], async (ctx) => {
+    const statusMsg = await ctx.reply('🎬 Toplu haber bülteni kontrol ediliyor ve hazırlanıyor, lütfen bekleyin...');
+    try {
+      const { createDailyDigest } = await import('../publisher/digestManager.js');
+      const digest = await createDailyDigest('manual');
+
+      if (!digest) {
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          'ℹ️ Şu anda bültene eklenecek yeni yayınlanmış bir haber bulunamadı.\n(X\'te yayınlanmış ve henüz bültende yer almamış haberler toplanır).'
+        );
+      } else {
+        await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
+      }
+    } catch (err: any) {
+      log.error({ err: err.message }, '/bulten komutunda hata');
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        undefined,
+        `❌ Bülten oluşturulurken hata oluştu: ${err.message}`
+      );
+    }
+  });
+
   // Düzenleme bilgilendirmesi
   bot.action('edit_instruction', async (ctx) => {
     await ctx.answerCbQuery(
@@ -180,8 +254,17 @@ if (env.TELEGRAM_BOT_TOKEN) {
 
       let caption = `📰 <b>YENİ HABER ONAYI BEKLİYOR (Düzenlendi)</b>\n\n`
         + `<b>Kategori:</b> ${article.category || 'Belirsiz'}\n`
-        + `<b>Skor:</b> ${article.score}\n\n`
-        + `<b>Tweet Metni:</b>\n${article.tweetText}\n\n`;
+        + `<b>Skor:</b> ${article.score}\n`
+        + (article.videoPath ? `🎬 <b>Instagram Reels:</b> Hazır (9:16 + Müzik)\n` : '')
+        + `\n🐦 <b>X (Twitter) Metni:</b>\n${article.tweetText}\n\n`;
+
+      if (article.instagramCaption) {
+        const maxIgLen = 220;
+        const igPreview = article.instagramCaption.length > maxIgLen
+          ? article.instagramCaption.substring(0, maxIgLen) + '...'
+          : article.instagramCaption;
+        caption += `📸 <b>Instagram Açıklaması:</b>\n${igPreview}\n\n`;
+      }
 
       if (article.threadTweets && Array.isArray(article.threadTweets) && article.threadTweets.length > 0) {
         caption += `<b>-- Thread Devamı --</b>\n`;
@@ -191,6 +274,10 @@ if (env.TELEGRAM_BOT_TOKEN) {
       }
 
       caption += (raw.url ? `🔗 <a href="${raw.url}">Kaynak Linki</a>` : '');
+
+      if (caption.length > 1020) {
+        caption = caption.substring(0, 1015) + '...';
+      }
 
       const buttons = (replyTo as any).reply_markup;
 
@@ -261,6 +348,8 @@ export interface ApprovalRequestData {
   sourceUrl?: string;
   category?: string;
   threadTweets?: string[];
+  hasReelVideo?: boolean;
+  instagramCaption?: string;
 }
 
 /**
@@ -277,28 +366,45 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
     return false;
   }
 
-  const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback("🚀 X'e Yayınla", `pub:x:${data.articleId}`),
-      Markup.button.callback("🚀 IG'ye Yayınla", `pub:ig:${data.articleId}`),
-    ],
-    [
-      Markup.button.callback('🚀 İkisine de Yayınla', `pub:all:${data.articleId}`),
-    ],
-    [
-      Markup.button.callback('🕒 Sıraya Al (X+IG)', `queue:all:${data.articleId}`),
-      Markup.button.callback('🕒 Sıraya Al (X)', `queue:x:${data.articleId}`),
-    ],
-    [
-      Markup.button.callback('✏️ Düzenle', `edit_instruction`),
-      Markup.button.callback('❌ Reddet', `reject:${data.articleId}`)
-    ],
-  ]);
+  const buttons = env.ENABLE_INSTAGRAM
+    ? Markup.inlineKeyboard([
+        [
+          Markup.button.callback("🚀 X'e Hemen Yayınla", `pub:x:${data.articleId}`),
+          Markup.button.callback("🕒 Sıraya Al (X)", `queue:x:${data.articleId}`),
+        ],
+        [
+          Markup.button.callback("🚀 Özel: Tekil IG'ye de At", `pub:all:${data.articleId}`),
+        ],
+        [
+          Markup.button.callback('✏️ Düzenle', `edit_instruction`),
+          Markup.button.callback('❌ Reddet', `reject:${data.articleId}`),
+        ],
+      ])
+    : Markup.inlineKeyboard([
+        [
+          Markup.button.callback("🚀 X'e Hemen Yayınla", `pub:x:${data.articleId}`),
+          Markup.button.callback('🕒 Sıraya Al (X)', `queue:x:${data.articleId}`),
+        ],
+        [
+          Markup.button.callback('✏️ Düzenle', `edit_instruction`),
+          Markup.button.callback('❌ Reddet', `reject:${data.articleId}`)
+        ],
+      ]);
 
   let caption = `📰 <b>YENİ HABER ONAYI BEKLİYOR</b>\n\n`
     + `<b>Kategori:</b> ${data.category || 'Belirsiz'}\n`
-    + `<b>Skor:</b> ${data.score}\n\n`
-    + `<b>Tweet Metni:</b>\n${data.tweetText}\n\n`;
+    + `<b>Skor:</b> ${data.score}\n`
+    + (data.hasReelVideo ? `🎬 <b>Instagram Reels Videosu:</b> Hazır (9:16 + Müzik)\n` : '')
+    + `\n🐦 <b>X (Twitter) Metni:</b>\n${data.tweetText}\n\n`;
+
+  if (data.instagramCaption) {
+    // Telegram caption 1024 karakter sınırına takılmamak için özet göster
+    const maxIgLen = 220;
+    const igPreview = data.instagramCaption.length > maxIgLen
+      ? data.instagramCaption.substring(0, maxIgLen) + '...'
+      : data.instagramCaption;
+    caption += `📸 <b>Instagram Açıklaması:</b>\n${igPreview}\n\n`;
+  }
 
   if (data.threadTweets && data.threadTweets.length > 0) {
     caption += `<b>-- Thread Devamı --</b>\n`;
@@ -308,6 +414,11 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
   }
 
   caption += (data.sourceUrl ? `🔗 <a href="${data.sourceUrl}">Kaynak Linki</a>` : '');
+
+  // Telegram sendPhoto 1024 karakter limit koruması
+  if (caption.length > 1020) {
+    caption = caption.substring(0, 1015) + '...';
+  }
 
   try {
     if (data.imagePath) {
@@ -327,6 +438,73 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
     return true;
   } catch (error) {
     log.error({ err: error instanceof Error ? error.message : error }, 'Telegram onay mesajı gönderilemedi');
+    return false;
+  }
+}
+
+export interface DigestApprovalData {
+  digestId: string;
+  type: 'noon' | 'evening' | 'manual';
+  articleCount: number;
+  videoPath: string;
+  caption: string;
+}
+
+/**
+ * Toplu haber bültenini (Reels videosu ile birlikte) Telegram onayına sunar
+ */
+export async function sendDigestApprovalRequest(data: DigestApprovalData): Promise<boolean> {
+  if (!bot) {
+    log.warn('Telegram bot aktif değil, bülten onay mesajı gönderilemedi.');
+    return false;
+  }
+
+  if (!env.TELEGRAM_CHAT_ID) {
+    log.warn('TELEGRAM_CHAT_ID tanımlı değil, bülten onay mesajı gönderilemedi.');
+    return false;
+  }
+
+  const typeName =
+    data.type === 'noon'
+      ? '☀️ ÖĞLE TEKNOLOJİ BÜLTENİ'
+      : data.type === 'evening'
+      ? '🌙 AKŞAM TEKNOLOJİ BÜLTENİ'
+      : '⚡️ GÜNÜN TEKNOLOJİ BÜLTENİ';
+
+  const buttons = Markup.inlineKeyboard([
+    [
+      Markup.button.callback("🚀 Instagram'a Yayınla", `digest:pub:${data.digestId}`),
+      Markup.button.callback('❌ Pas Geç', `digest:rej:${data.digestId}`),
+    ],
+  ]);
+
+  let text = `🎬 <b>DONANIMPOST ${typeName}</b>\n\n`
+    + `📊 <b>Kapsanan Haber Sayısı:</b> ${data.articleCount}\n\n`
+    + `📸 <b>Instagram Açıklaması:</b>\n${data.caption}\n\n`
+    + `Instagram Reels olarak paylaşılsın mı?`;
+
+  if (text.length > 1020) {
+    text = text.substring(0, 1015) + '...';
+  }
+
+  try {
+    if (data.videoPath && existsSync(data.videoPath)) {
+      await bot.telegram.sendVideo(
+        env.TELEGRAM_CHAT_ID,
+        { source: data.videoPath },
+        { caption: text, parse_mode: 'HTML', ...buttons },
+      );
+    } else {
+      await bot.telegram.sendMessage(
+        env.TELEGRAM_CHAT_ID,
+        text,
+        { parse_mode: 'HTML', ...buttons },
+      );
+    }
+    log.info({ digestId: data.digestId }, 'Bülten onay mesajı Telegram\'a gönderildi');
+    return true;
+  } catch (error: any) {
+    log.error({ err: error.message }, 'Telegram bülten onay mesajı gönderilemedi');
     return false;
   }
 }

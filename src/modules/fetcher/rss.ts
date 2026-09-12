@@ -4,12 +4,12 @@ import type { SourceConfig } from '../../config/sources.js';
 
 const log = createLogger('fetcher:rss');
 
-// RSS parser — özel alanlar ekle
+// RSS parser — Cloudflare ve bot korumalarını aşmak için popüler bir RSS okuyucu User-Agent'ı
 const parser = new Parser({
   timeout: 10_000,
   headers: {
     'User-Agent':
-      'AutoSocial/1.0 (RSS Reader; +https://github.com/autosocial) Mozilla/5.0',
+      'FreshRSS/1.20 (Linux; https://freshrss.org) Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
   },
   customFields: {
@@ -62,7 +62,7 @@ export async function fetchRssFeed(
       lastError = error instanceof Error ? error : new Error(String(error));
 
       if (attempt < maxRetries) {
-        const delayMs = Math.pow(5, attempt) * 1000; // 5s → 25s → 125s (5^1 → 5^2 → 5^3)
+        const delayMs = attempt * 2000; // 2s → 4s
         log.warn(
           { sourceId: source.id, attempt, delayMs, err: lastError.message },
           'RSS çekme başarısız, yeniden deneniyor',

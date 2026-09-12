@@ -47,6 +47,7 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
       videoPath: processedArticles.videoPath,
       status: processedArticles.status,
       articleUrl: rawArticles.url,
+      mediaType: rawArticles.mediaType,
     })
     .from(processedArticles)
     .leftJoin(rawArticles, eq(processedArticles.rawArticleId, rawArticles.id))
@@ -66,11 +67,10 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
     return;
   }
 
-  // Hybrid modda: 'pending' durumundakileri Faz 3'e kadar yayınla
-  // (Faz 3'te Telegram onayı buraya entegre edilecek)
-  if (article.status === 'pending' && env.APP_MODE === 'hybrid') {
-    log.info({ processedArticleId }, 'Hybrid mod: Telegram onayı bekleniyor (Faz 3 sonrası aktif)');
-    // Şimdilik hybrid modda da yayınla — Faz 3'te bu satır değişecek
+  // Hybrid modda: Onaylanmamış (pending vb.) makaleler yayınlanamaz
+  if (article.status !== 'approved' && env.APP_MODE === 'hybrid') {
+    log.warn({ processedArticleId, status: article.status }, 'Hybrid mod: Makale Telegram üzerinden henüz onaylanmadı, yayın atlanıyor');
+    return;
   }
 
   // ─── Tweet Yayını ─────────────────────────────────────────────────────────
@@ -95,11 +95,16 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
       } else {
         let currentTweetId: string;
 
+        // X için: 16:9 yatay kart önceliklidir (Reels videosu 9:16 olduğu için X feed'ine uygun değildir)
+        const twitterMedia = (article.mediaType === 'video' && !article.videoPath?.includes('_reel.mp4'))
+          ? (article.videoPath ?? article.imagePath ?? undefined)
+          : (article.imagePath ?? article.videoPath ?? undefined);
+
         const { tweetId, tweetUrl } = await withRateLimit(() =>
           postTweet(
             article.tweetText,
             (article.hashtags as string[]) ?? [],
-            article.videoPath ?? article.imagePath ?? undefined,
+            twitterMedia,
           ),
         );
         currentTweetId = tweetId;
@@ -153,7 +158,7 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
     }
 
     // ─── Instagram Yayını ───
-    if (targets.includes('instagram')) {
+    if (env.ENABLE_INSTAGRAM && targets.includes('instagram')) {
       const existingIg = await db.query.publishedInstagramPosts.findFirst({
         where: eq(publishedInstagramPosts.processedId, article.id)
       });
@@ -183,9 +188,20 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
     }
 
     // Durumu 'published' olarak güncelle
+    const updates: Record<string, any> = {
+      status: 'published',
+      updatedAt: new Date(),
+    };
+    if (targets.includes('instagram')) {
+      updates.includedInDigest = true;
+    } else {
+      // Sadece X'te yayınlandıysa, Instagram günlük bültenine girebilmesi için false yap
+      updates.includedInDigest = false;
+    }
+
     await db
       .update(processedArticles)
-      .set({ status: 'published', updatedAt: new Date() })
+      .set(updates)
       .where(eq(processedArticles.id, article.id));
 
     await updateDailyStats({ articlesPublished: 1 });

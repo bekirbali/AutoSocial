@@ -1,7 +1,7 @@
 /**
  * AutoSocial — Anahtar Kelimeler ve Kara Liste Konfigürasyonu
  *
- * Niş: PC Donanım, Çevre Birimleri, Oyun, Fırsatlar
+ * Niş: PC Donanım, Çevre Birimleri, Akıllı Telefon & Mobil Teknoloji, Oyun, Fırsatlar
  */
 
 // ─── NİŞ ANAHTAR KELİMELER (Skor hesabında kullanılır) ─────────────────────
@@ -76,7 +76,7 @@ export const NICHE_KEYWORDS = {
   // Fırsatlar, İndirimler ve Ücretsiz Oyunlar
   deals: [
     'deal', 'discount', 'sale', 'price drop', 'offer', 'best buy',
-    'indirim', 'fırsat', 'kampanya', 'satış', 'en ucuz', 'f/p', 'fiyat',
+    'indirim', 'fırsat', 'kampanya', 'indirimli satış', 'en ucuz', 'f/p', 'fiyat düşüşü', 'fiyat indirimi', 'uygun fiyat',
     'msrp', 'street price', 'newegg', 'amazon deal', 'refurbished',
     // Ücretsiz oyun terimleri
     'free game', 'free to keep', 'free to play', 'free this week',
@@ -90,6 +90,23 @@ export const NICHE_KEYWORDS = {
   software: [
     'driver', 'update', 'firmware', 'bios update', 'adrenaline',
     'game ready driver', 'studio driver', 'sürücü güncellemesi',
+  ],
+
+  // Yapay Zeka (AI)
+  ai: [
+    'ai ', 'yapay zeka', 'chatgpt', 'openai', 'gemini', 'gpt-4', 'gpt-5', 'gpt-6',
+    'copilot', 'claude', 'anthropic', 'midjourney', 'dall-e', 'stablediffusion', 'llama',
+    'npu', 'tensor', 'machine learning', 'deep learning', 'yapay zekâ', 'yapayzeka'
+  ],
+
+  // Akıllı Telefon & Mobil Teknoloji
+  mobile: [
+    'iphone', 'apple', 'ios', 'ipad', 'apple watch', 'airpods', 'vision pro',
+    'samsung', 'galaxy', 'galaxy s', 'galaxy z', 'one ui', 'exynos',
+    'smartphone', 'akıllı telefon', 'snapdragon', 'qualcomm', 'dimensity', 'mediatek',
+    'xiaomi', 'redmi', 'hyperos', 'google pixel', 'pixel 9', 'pixel 8', 'android',
+    'foldable', 'katlanabilir telefon', 'periscope camera', 'telephoto', 'hızlı şarj',
+    'fast charging', 'bionic', 'a18', 'a17', 'apple silicon', 'huawei', 'honor', 'oneplus',
   ],
 } as const;
 
@@ -110,6 +127,8 @@ export type ArticleCategory =
   | 'gaming'
   | 'deals'
   | 'software'
+  | 'ai'
+  | 'mobile'
   | 'general';
 
 export function detectCategory(text: string): ArticleCategory {
@@ -117,6 +136,7 @@ export function detectCategory(text: string): ArticleCategory {
 
   if (NICHE_KEYWORDS.deals.some((k) => lower.includes(k))) return 'deals';
   if (NICHE_KEYWORDS.gpu.some((k) => lower.includes(k))) return 'gpu';
+  if (NICHE_KEYWORDS.mobile.some((k) => lower.includes(k))) return 'mobile';
   if (NICHE_KEYWORDS.cpu.some((k) => lower.includes(k))) return 'cpu';
   if (NICHE_KEYWORDS.ram.some((k) => lower.includes(k))) return 'ram';
   if (NICHE_KEYWORDS.storage.some((k) => lower.includes(k))) return 'storage';
@@ -127,6 +147,7 @@ export function detectCategory(text: string): ArticleCategory {
   if (NICHE_KEYWORDS.case_pc.some((k) => lower.includes(k))) return 'case';
   if (NICHE_KEYWORDS.gaming.some((k) => lower.includes(k))) return 'gaming';
   if (NICHE_KEYWORDS.software.some((k) => lower.includes(k))) return 'software';
+  if (NICHE_KEYWORDS.ai.some((k) => lower.includes(k))) return 'ai';
 
   return 'general';
 }
@@ -163,5 +184,7 @@ export const CATEGORY_COLORS: Record<ArticleCategory, { from: string; to: string
   gaming:       { from: '#0a1a00', to: '#143300' },   // Koyu yeşil
   deals:        { from: '#1a0500', to: '#2e0d00' },   // Koyu turuncu-kırmızı
   software:     { from: '#001a1a', to: '#002e2e' },   // Koyu cyan
+  ai:           { from: '#0f0c29', to: '#302b63' },   // Koyu lacivert-mor (Gelecekçi his)
+  mobile:       { from: '#0d1322', to: '#1d2d50' },   // Koyu titanyum / gece mavisi
   general:      { from: '#111111', to: '#1a1a1a' },   // Nötr siyah
 };

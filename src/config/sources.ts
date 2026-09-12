@@ -1,7 +1,7 @@
 /**
  * AutoSocial — Haber Kaynakları Konfigürasyonu
  *
- * Niş: PC Donanım, Çevre Birimleri, Oyun Haberleri, Fırsatlar/İndirimler
+ * Niş: PC Donanım, Çevre Birimleri, Akıllı Telefon & Mobil Teknoloji, Oyun Haberleri, Fırsatlar/İndirimler
  * Dil: EN + TR (tweet dili her zaman TR)
  *
  * Kaynak güvenilirliği: 1-5 (reliability skoru)
@@ -18,14 +18,14 @@ export interface SourceConfig {
   url: string;
   rssUrl: string; // Reddit için subreddit adı veya rss formatı, örn: reddit:PublicFreakout
   type?: 'rss' | 'reddit';
-  lang: 'en' | 'tr';
+  lang: 'en' | 'tr' | 'de';
   reliability: 1 | 2 | 3 | 4 | 5;
   categories: string[];
   isActive: boolean;
 }
 
 export const SOURCES: SourceConfig[] = [
-  // ─── İNGİLİZCE KAYNAKLAR (Hız arbitrajı için öncelikli) ────────────────────
+  // ─── YABANCI KAYNAKLAR (Hız arbitrajı için öncelikli) ────────────────────
 
   {
     id: 'anandtech',
@@ -35,7 +35,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 5,
     categories: ['donanım', 'işlemci', 'ekran kartı', 'bellek', 'depolama'],
-    isActive: false, // RSS bozuk XML döndürüyor — site 2023'ten beri pasif
+    isActive: false, // Site Ağustos 2024'te kapandı
   },
   {
     id: 'tomshardware',
@@ -51,18 +51,18 @@ export const SOURCES: SourceConfig[] = [
     id: 'techpowerup',
     name: 'TechPowerUp',
     url: 'https://www.techpowerup.com',
-    rssUrl: 'https://www.techpowerup.com/rss/news.xml',
+    rssUrl: 'https://www.techpowerup.com/rss/news',
     lang: 'en',
     reliability: 4,
-    categories: ['donanım', 'ekran kartı', 'sürücü'],
+    categories: ['donanım', 'ekran kartı', 'sürücü', 'işlemci'],
     isActive: true,
   },
   {
     id: 'hardwareluxx',
     name: 'HardwareLuxx',
-    url: 'https://www.hardwareluxx.com',
-    rssUrl: 'https://www.hardwareluxx.com/rss/rss_news.xml',
-    lang: 'en',
+    url: 'https://www.hardwareluxx.de',
+    rssUrl: 'https://www.hardwareluxx.de/hwl.feed',
+    lang: 'de',
     reliability: 4,
     categories: ['donanım', 'işlemci', 'ekran kartı'],
     isActive: true,
@@ -95,7 +95,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['donanım', 'inceleme', 'fırsat'],
-    isActive: true,
+    isActive: false, // Cloudflare Turnstile bot koruması nedeniyle RSS erişimi engelleniyor
   },
   {
     id: 'videocardz',
@@ -111,10 +111,40 @@ export const SOURCES: SourceConfig[] = [
     id: 'overclock3d',
     name: 'Overclock3D',
     url: 'https://www.overclock3d.net',
-    rssUrl: 'https://overclock3d.net/rss',
+    rssUrl: 'https://overclock3d.net/feed',
     lang: 'en',
     reliability: 3,
     categories: ['donanım', 'test', 'overclock'],
+    isActive: true,
+  },
+  {
+    id: 'gsmarena',
+    name: 'GSMArena',
+    url: 'https://www.gsmarena.com',
+    rssUrl: 'https://www.gsmarena.com/rss-news-reviews.php3',
+    lang: 'en',
+    reliability: 5,
+    categories: ['mobil', 'akıllı telefon', 'donanım'],
+    isActive: true,
+  },
+  {
+    id: '9to5mac',
+    name: '9to5Mac',
+    url: 'https://9to5mac.com',
+    rssUrl: 'https://9to5mac.com/feed/',
+    lang: 'en',
+    reliability: 5,
+    categories: ['apple', 'iphone', 'mobil'],
+    isActive: true,
+  },
+  {
+    id: 'sammobile',
+    name: 'SamMobile',
+    url: 'https://www.sammobile.com',
+    rssUrl: 'https://www.sammobile.com/feed/',
+    lang: 'en',
+    reliability: 4,
+    categories: ['samsung', 'galaxy', 'mobil'],
     isActive: true,
   },
   {
@@ -222,7 +252,7 @@ export const SOURCES: SourceConfig[] = [
     id: 'humblebundle_blog',
     name: 'Humble Bundle Blog',
     url: 'https://blog.humblebundle.com',
-    rssUrl: 'https://blog.humblebundle.com/rss',
+    rssUrl: 'https://blog.humblebundle.com/feed/',
     lang: 'en',
     reliability: 5,
     categories: ['oyun', 'fırsat', 'ücretsiz oyun', 'bundle'],

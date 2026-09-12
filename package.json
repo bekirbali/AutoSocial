@@ -14,7 +14,8 @@
     "test:fetch": "tsx scripts/test-fetch.ts",
     "test:ai": "tsx scripts/test-ai.ts",
     "test:tweet": "tsx scripts/test-tweet.ts",
-    "test:image": "tsx scripts/test-image.ts"
+    "test:image": "tsx scripts/test-image.ts",
+    "test:digest": "tsx scripts/test-digest.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

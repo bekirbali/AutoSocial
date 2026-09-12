@@ -30,6 +30,20 @@ async function analyticsJob(job: Job<AnalyticsJobData>): Promise<void> {
     return;
   }
 
+  if (job.name === 'noon-digest') {
+    const { createDailyDigest } = await import('../modules/publisher/digestManager.js');
+    await createDailyDigest('noon');
+    log.info({ jobId: job.id }, '✅ Öğle bülteni (13:00) job tamamlandı');
+    return;
+  }
+
+  if (job.name === 'evening-digest') {
+    const { createDailyDigest } = await import('../modules/publisher/digestManager.js');
+    await createDailyDigest('evening');
+    log.info({ jobId: job.id }, '✅ Akşam bülteni (19:00) job tamamlandı');
+    return;
+  }
+
   try {
     // Tweet metriklerini güncelle
     const updated = await refreshTweetMetrics(job.data.lookbackHours);

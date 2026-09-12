@@ -7,12 +7,17 @@ import { filterArticle } from './filter.js';
 import { scoreArticle } from './scorer.js';
 import { generateTweet, generateInstagramCaption } from './ai.js';
 import { generateNewsCard } from './image.js';
+import { generateReelVideo } from './reelGenerator.js';
 import { downloadVideo } from './mediaDownloader.js';
+import { extractOpenGraphImage } from './downloader.js';
 import { hashUrl } from './dedup.js';
 import { detectCategory } from '../../config/keywords.js';
 import { env } from '../../config/env.js';
 import type { FetchedItem } from '../fetcher/rss.js';
 import { SOURCES } from '../../config/sources.js';
+import path from 'path';
+import { existsSync } from 'fs';
+import { mkdir } from 'fs/promises';
 
 const log = createLogger('processor');
 
@@ -109,15 +114,17 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
     }
 
     // ─── ADIM 7: AI ile Tweet ve IG Caption Üretimi ────────────────────────────────────────
-    const [tweetResult, igResult] = await Promise.all([
-      generateTweet(
-        item.title,
-        item.summary,
-        item.sourceName,
-        category,
-        videoPath
-      ),
-      generateInstagramCaption(
+    const tweetResult = await generateTweet(
+      item.title,
+      item.summary,
+      item.sourceName,
+      category,
+      videoPath
+    );
+
+    let igResult = null;
+    if (env.ENABLE_INSTAGRAM) {
+      igResult = await generateInstagramCaption(
         item.title,
         item.summary,
         item.sourceName,
@@ -126,14 +133,28 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
       ).catch(e => {
         log.warn({ err: e.message }, 'Instagram caption üretilemedi, null atanacak');
         return null;
-      })
-    ]);
+      });
+    }
 
-    // ─── ADIM 8: Görsel Üretimi ───────────────────────────────────────────────
+    // ─── ADIM 8: Görsel ve Video (Reels) Üretimi ─────────────────────────────
     let imagePath: string | undefined;
     let imageSource: string | undefined;
 
     try {
+      // Eğer RSS beslemesinden görsel gelmediyse (örn: SamMobile), sayfanın OpenGraph görselini çek
+      if (!item.imageUrl && item.url) {
+        const ogImage = await extractOpenGraphImage(item.url);
+        if (ogImage) {
+          item.imageUrl = ogImage;
+          // DB'deki rawArticles tablosunu da güncelle ki bülten (digest) ve diğer servisler görseli görebilsin
+          await db
+            .update(rawArticles)
+            .set({ imageUrl: ogImage })
+            .where(eq(rawArticles.id, rawArticle.id))
+            .catch((e) => log.warn({ err: e.message }, 'rawArticles imageUrl güncellenemedi'));
+        }
+      }
+
       // X (Twitter) için 16:9 görsel
       const imageResult16x9 = await generateNewsCard(
         tweetResult.translatedTitle,
@@ -141,24 +162,44 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
         category,
         item.publishedAt,
         rawArticle.id,
-        '16:9'
+        '16:9',
+        item.imageUrl
       );
       imagePath = imageResult16x9.imagePath;
       imageSource = imageResult16x9.imageSource;
 
-      // Instagram için 4:5 görsel
-      await generateNewsCard(
-        tweetResult.translatedTitle,
-        item.sourceName,
-        category,
-        item.publishedAt,
-        rawArticle.id,
-        '4:5'
-      );
+      // Instagram için 9:16 kart üret ve 6 saniyelik dinamik Reels videosu oluştur
+      if (env.ENABLE_INSTAGRAM && !videoPath) {
+        // 1. 9:16 dikey kart üret
+        const imageResult9x16 = await generateNewsCard(
+          tweetResult.translatedTitle,
+          item.sourceName,
+          category,
+          item.publishedAt,
+          rawArticle.id,
+          '9:16',
+          item.imageUrl
+        );
+
+        // 2. FFmpeg ile 6 saniyelik Ken Burns + müzikli Reels videosu üret
+        const videoOutputDir = path.join(process.cwd(), 'output', 'videos');
+        if (!existsSync(videoOutputDir)) {
+          await mkdir(videoOutputDir, { recursive: true });
+        }
+
+        const reelVideoPath = path.join(videoOutputDir, `${rawArticle.id}_reel.mp4`);
+        try {
+          await generateReelVideo(imageResult9x16.imagePath, reelVideoPath, { durationSeconds: 6 });
+          videoPath = reelVideoPath;
+          log.info({ reelVideoPath }, '🎬 Instagram Reels videosu üretildi');
+        } catch (reelErr: any) {
+          log.warn({ err: reelErr.message }, 'Reels videosu üretilemedi, statik görsel kullanılacak');
+        }
+      }
     } catch (imgErr) {
       log.warn(
         { err: imgErr instanceof Error ? imgErr.message : imgErr, url: item.url },
-        'Görsel üretimi başarısız, görselsiz devam ediliyor',
+        'Görsel veya video üretimi başarısız, medyassız devam ediliyor',
       );
     }
 
@@ -169,6 +210,7 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
       rawArticleId: rawArticle.id,
       score: scoreBreakdown.total.toString(),
       tweetText: tweetResult.tweetText,
+      translatedTitle: tweetResult.translatedTitle,
       hashtags: tweetResult.hashtags,
       threadTweets: tweetResult.threadTweets,
       instagramCaption: igResult?.caption,

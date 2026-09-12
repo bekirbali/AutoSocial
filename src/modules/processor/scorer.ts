@@ -33,12 +33,14 @@ export function scoreArticle(
   let total =
     freshness * 0.4 + keyword * 0.3 + sourceScore * 0.2 + quality * 0.1;
 
-  // Yabancı kaynaklardaki (EN) indirim/fırsat haberlerini filtrele
+  // Yabancı kaynaklardaki (EN / DE) indirim/fırsat haberlerini filtrele
   // Proje hedef kitlesi Türk kullanıcılar olduğu için global indirimlerin değeri yok
-  if (item.lang === 'en') {
-    const text = `${item.title} ${item.summary ?? ''}`.toLowerCase();
-    const dealKeywords = [' deal ', ' deals ', ' sale ', ' discount ', ' free ', '% off', ' bundle ', ' giveaway '];
-    if (dealKeywords.some(w => text.includes(w))) {
+  if (item.lang === 'en' || item.lang === 'de') {
+    const text = `${item.title} ${item.summary ?? ''}`;
+    // Kelime sınırlarıyla (word boundaries) regex araması yaparak noktalama işaretlerine takılmayı önlüyoruz
+    const dealRegex = /\b(deal|deals|sale|sales|discount|discounts|free|bundle|giveaway|rabatt|angebote|schnäppchen|gratis|save|price drop|lowest price|cheap|clearance|price cut|off)\b/i;
+    
+    if (dealRegex.test(text) || /%\s*off/i.test(text) || /\$\d+\s*off/i.test(text)) {
       total = 0; // Skor sıfırlanır, AI işleme girmeden 'low_score' olarak elenir
     }
   }

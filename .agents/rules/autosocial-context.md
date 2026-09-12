@@ -5,7 +5,8 @@ trigger: always_on
 # AutoSocial Proje Bağlamı ve Kararları
 
 ## Proje Nedir?
-AutoSocial; haber kaynaklarından otomatik içerik toplayıp Gemini AI ile özetleyen,
+AutoSocial; PC donanım, çevre birimleri, oyun ve akıllı telefon/mobil teknoloji (iPhone, Samsung vb.)
+haber kaynaklarından otomatik içerik toplayıp Gemini AI ile özetleyen,
 Telegram bot üzerinden hibrit onay akışıyla X (Twitter) ve Instagram'a belirli saatlerde
 yayın yapan bir otomasyon sistemidir.
 
@@ -17,11 +18,37 @@ yayın yapan bir otomasyon sistemidir.
 
 ## Kesinleşmiş Teknik Kararlar
 
-### Görsel Strateji: Sharp Template
+### Sosyal Medya Marka Kimliği ve Tasarım Değişmezleri (Invariants)
+1. **Marka İsmi (DonanımPost):**
+   - X (Twitter), Instagram, Telegram bildirimleri ve üretilen tüm görsel/video kartlarında marka adı istisnasız **DonanımPost** olarak geçer.
+   - "AutoSocial" yalnızca dahili kod tabanı / repo adıdır; kartların üzerinde, video şablonlarında veya dışa dönük hiçbir içerikte **ASLA** görünemez.
+
+2. **Kategori Adları ve Rozetleri Yasağı:**
+   - Sharp ile üretilen hiçbir görsel/video şablonunda (16:9 X kartı, 9:16 Instagram Reels kartı vb.) kategori adı veya kategori rozeti **KESİNLİKLE KULLANILMAZ**.
+   - Kategori sınıflandırması (`cpu`, `gpu`, `mobile` vb.) yalnızca sistemin iç mantığında (skorlama, filtreleme, DB) kullanılır; şablon tasarımlarına basılmaz.
+
+### Görsel ve Video Stratejisi: Sharp Template + Instagram Reels (FFmpeg)
 - Unsplash ve Pexels API'leri kullanım sözleşmeleri (ToS) nedeniyle reddedildi.
-- Sharp kütüphanesiyle kod tarafında otomatik görsel üretimi yapılıyor.
-- Her tweet/post için ~50ms'de kategori rengine göre gradient arka planlı (jpg/webp) kart üretilir.
-- Instagram için görseller statik dosya sunucusu üzerinden dışarı açılır.
+- Marka ismi kartlarda ve şablonlarda **DonanımPost** olarak geçer (AutoSocial kullanılmaz).
+- Şablonlarda kategori rozeti kullanılmaz (tüm görsel şablonlardan kaldırılmıştır).
+- **X (Twitter):** 16:9 formatında (`1200x675`) orijinal görselli veya zarif gradient arka planlı JPEG kart üretilir. Günde 8–15 tweet ile anlık ve hızlı haber akışı sürdürülür.
+- **Instagram Daily Digest (Toplu Haber Bülteni - 13:00 ve 19:00):** Instagram hesabını algoritmik yamyamlaşma (cannibalization) ve spam kısıtlamasından korumak için tek tek 8-15 reels atılmaz. Bunun yerine X'te yayınlanan onaylı haberler günde iki kez (**13:00 Öğle Bülteni** ve **19:00 Akşam Bülteni**) toplanır. Sharp ile numaralandırılmış (`ÖĞLE BÜLTENİ • 1/3`) 9:16 dikey kartlar üretilir. Okunabilirliği korumak için kartlar ekranda statik ve net durur; FFmpeg ile 4-4.5'er saniyelik slaytlar ve `assets/audio/` ritmik teknoloji müziğiyle birleştirilerek 15–30 saniyelik (maksimum 7 haber) tek bir Reels bülteni oluşturulur. Telegram üzerinden onaylanıp yayınlanır (ayrıca `/bulten` komutu ile manuel tetiklenebilir).
+- **Görsel Fallback (OpenGraph):** SamMobile gibi RSS XML akışına resim koymayan kaynaklar için `extractOpenGraphImage` üzerinden sayfanın orijinal kapak fotoğrafı otomatik çekilir.
+- **Reels Yayınlama:** Meta Graph API üçüncü parti uygulamalara telifli müzik seçimi izni vermediği için müzik doğrudan MP4 dosyasına gömülür. `media_type: 'REELS'`, `share_to_feed: true` ve Meta video kodlamasını takip eden `waitForMediaContainerReady` polling mekanizmasıyla profil ızgarasında da çıkacak şekilde yayınlanır.
+- **Platform Medya Ayrımı:** `publishWorker` içinde X için 16:9 JPEG kartı (`article.imagePath`), Instagram için ise 9:16 Reels bülteni (`digestManager.ts` / `instagramDigests`) kullanılır.
+- Instagram için medya statik dosya sunucusu üzerinden dışarı açılır.
+
+### İçerik Nişi ve Kaynaklar
+- **Odak Alanları:** PC Donanım (CPU, GPU, RAM, vb.), Çevre Birimleri, Akıllı Telefon & Mobil Teknoloji (Apple/iPhone, Samsung/Galaxy, Xiaomi vb.), Oyun ve Fırsatlar.
+- **Mobil Kaynakları:** GSMArena (5/5), 9to5Mac (5/5), SamMobile (4/4).
+- **Fiyat & Fırsat Koruması:** Ürün lansmanlarının ("fiyatı açıklandı", "satışa çıktı") yanlışlıkla indirim (`deals`) sanılmaması için deals anahtar kelimeleri spesifikleştirilmiştir (`indirimli satış`, `fiyat indirimi` vb.).
+
+### Reddit Viral Teknoloji & Video Arbitraj Stratejisi
+- **Kritik Amaç:** Reddit, projede sıradan bir kaynak değil; teknoloji, robotik (örn: mağazada müşteriye tepki veren robotlar, fabrika kazaları), yapay zeka demoları, şaşırtıcı donanım/cihazlar ve sıra dışı inovasyon anlarını içeren videoları henüz patlama safhasındayken (early-stage) yakalayıp X ve Instagram'da ilk paylaşarak viral organik trafik toplama aracıdır.
+- **Hedef Subreddit Havuzu:** `r/robotics`, `r/singularity`, `r/technology`, `r/gadgets`, `r/EngineeringPorn`, `r/Damnthatsinteresting`, `r/Futurology` ve teknolojik viral anlar.
+- **Keşif Mantığı:** "Hot" yerine özellikle "Rising" (yükselenler) veya saatlik ivmeli gönderiler taranarak, henüz diğer sosyal medya hesapları fark etmeden yakalanır.
+- **API Durumu:** `reddit.com/prefs/apps` üzerinden script oluşturabilmek için de resmi API başvurusu yapılıp onay alınması gerekmektedir (şu ana kadar 2 kez başvuru yapılmış ve ikisinde de ret alınmıştır; başvuru süreçleri veya alternatif yollar buna göre ele alınmalıdır).
+- **İşleme Akışı:** Video kaynağı `mediaDownloader.ts` (yt-dlp) ile indirilir, Gemini ile vurucu Türkçe tweet ve Instagram açıklaması üretilir, Telegram onayı üzerinden onaylanıp doğrudan video olarak yayınlanır.
 
 ### Tünel Çözümü (Instagram Graph API İçin)
 - Ngrok npm paketi Windows Defender'a takıldığı için kullanılmıyor.
@@ -60,7 +87,8 @@ Eksik: DATABASE_URL, REDIS_URL (Canlıya çıkarken Railway için eklenecek, şu
 ## İçerik Stratejisi
 - Günde 8-15 tweet/post (sabah/öğle/akşam/gece dağılımı)
 - Hafta sonu %30 azaltma (insan davranışı simülasyonu)
-- Tweet metni max 200 karakter + 1-2 hashtag + kaynak
-- Link ilk yoruma eklenir (X algoritması dış link içeren tweetleri bastırdığı için)
+- Tweet metni max 240-270 karakter, **hashtag KULLANILMIYOR**.
+- **Thread (Zincir) KULLANILMIYOR:** X'te tüm içerikler tekil, vurucu ve bağımsız bir tweettir. "Detaylar zincirde", "detaylar aşağıda", "devamı flood'da" gibi ifadeler KESİNLİKLE YASAKTIR. Tüm hap bilgi ve kanca tek tweette toplanır. (Thread desteği ileride X Premium alınınca tekrar değerlendirilecektir).
+- Link veya kaynak ikinci bir tweet (thread/reply) olarak **EKLENMİYOR**. Gerekirse içerikte kaynak adı (Örn: "Tom's Hardware'in haberine göre...") veriliyor.
 - Random jitter: ±1-12 dakika sapma (bot tespitine karşı)
 - Min skor eşiği: 70/100 (freshness %40 + keyword %30 + kaynak %20 + kalite %10)

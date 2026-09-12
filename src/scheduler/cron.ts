@@ -37,6 +37,10 @@ function analyticsCronExpression(): string {
   return `0 */${interval} * * *`;
 }
 
+// Instagram Günlük Toplu Haber Bültenleri (Reels Digest)
+const NOON_DIGEST_CRON = '0 13 * * *'; // Her gün 13:00
+const EVENING_DIGEST_CRON = '0 19 * * *'; // Her gün 19:00
+
 /**
  * Tüm recurring (tekrar eden) job'ları BullMQ'ya kayıt et
  * Bu fonksiyon sadece bir kez (boot'ta) çağrılır.
@@ -90,6 +94,33 @@ export async function registerCronJobs(): Promise<void> {
     },
   );
   log.info({ cron: WEEKLY_REPORT_CRON }, '✅ Haftalık rapor cron kaydedildi');
+
+  // ─── 5. Instagram Günlük Bülten Cron'ları (13:00 ve 19:00) ─────────────────
+  if (env.ENABLE_INSTAGRAM) {
+    await analyticsQueue.add(
+      'noon-digest',
+      {
+        triggeredBy: 'cron',
+        lookbackHours: 0,
+      } satisfies AnalyticsJobData,
+      {
+        repeat: { pattern: NOON_DIGEST_CRON },
+      },
+    );
+    log.info({ cron: NOON_DIGEST_CRON }, '✅ Öğle bülteni (13:00) cron kaydedildi');
+
+    await analyticsQueue.add(
+      'evening-digest',
+      {
+        triggeredBy: 'cron',
+        lookbackHours: 0,
+      } satisfies AnalyticsJobData,
+      {
+        repeat: { pattern: EVENING_DIGEST_CRON },
+      },
+    );
+    log.info({ cron: EVENING_DIGEST_CRON }, '✅ Akşam bülteni (19:00) cron kaydedildi');
+  }
 
   log.info('Tüm cron job\'lar kaydedildi');
 }
@@ -163,23 +194,65 @@ export async function schedulePublishJobs(): Promise<void> {
 export async function getNextPublishSlot(): Promise<Date> {
   const schedule = generateDailySchedule();
   const todayCount = await getTodayPublishedCount();
+  
+  // Kuyruktaki delayed (bekleyen) işleri al
+  const delayedJobs = await publishQueue.getDelayed();
+  
+  // Bugün için planlanmış olanların sayısını ve kuyruktaki EN İLERİ zamanı bul
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+
+  let queuedForTodayCount = 0;
+  let lastScheduledTime = 0;
+
+  for (const job of delayedJobs) {
+    if (job.data && job.data.scheduledFor) {
+      const scheduledTime = new Date(job.data.scheduledFor).getTime();
+      if (scheduledTime >= todayStart.getTime() && scheduledTime < todayEnd.getTime()) {
+        queuedForTodayCount++;
+      }
+      if (scheduledTime > lastScheduledTime) {
+        lastScheduledTime = scheduledTime;
+      }
+    }
+  }
+
+  const totalToday = todayCount + queuedForTodayCount;
+  let proposedSlot: Date | null = null;
 
   // Bugünkü planın dolmamış ve gelecekte olan ilk slotunu bul
-  for (let i = todayCount; i < schedule.length; i++) {
+  for (let i = totalToday; i < schedule.length; i++) {
     const slot = schedule[i];
     if (slot && slot.getTime() > Date.now()) {
-      return slot;
+      proposedSlot = slot;
+      break;
     }
   }
 
   // Plan doldu veya geçmiş saatte — yarın sabah 07:00'a ata
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(7, 0, 0, 0);
+  if (!proposedSlot) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0);
 
-  // ±12 dakika jitter ekle
-  const jitter = (Math.random() * 24 - 12) * 60 * 1000;
-  return new Date(tomorrow.getTime() + jitter);
+    const jitter = (Math.random() * 24 - 12) * 60 * 1000;
+    proposedSlot = new Date(tomorrow.getTime() + jitter);
+  }
+
+  // Çarpışma Önleme (Collision & Min Interval)
+  // Eğer önerilen zaman (proposedSlot), sıradaki en son hedeften en az 30 dk sonra değilse, onu ileri it.
+  const minIntervalMs = 30 * 60 * 1000; // 30 dakika
+  const minimumAllowedTime = Math.max(Date.now(), lastScheduledTime) + minIntervalMs;
+
+  if (proposedSlot.getTime() < minimumAllowedTime) {
+    // Biraz jitter ekleyerek aynı düz saatlere (örn: 07:30, 08:00) yığılmasını engelle
+    const jitter = (Math.random() * 10 - 5) * 60 * 1000; // ±5 dk
+    return new Date(minimumAllowedTime + jitter);
+  }
+
+  return proposedSlot;
 }
 
 /**

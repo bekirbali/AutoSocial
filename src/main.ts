@@ -166,7 +166,17 @@ async function seedSources() {
         categories: source.categories as string[],
         isActive: source.isActive,
       })
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: sources.url,
+        set: {
+          name: source.name,
+          rssUrl: source.rssUrl,
+          lang: source.lang,
+          reliability: source.reliability,
+          categories: source.categories as string[],
+          isActive: source.isActive,
+        },
+      })
       .catch((err) => {
         log.warn({ sourceName: source.name, err: err.message }, 'Kaynak seed edilemedi');
       });

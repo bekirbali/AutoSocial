@@ -13,6 +13,31 @@ export interface InstagramPostResult {
 }
 
 /**
+ * Aktif public URL'yi tespit eder.
+ * Eğer lokalde cloudflared çalışıyorsa (127.0.0.1:20241/metrics), dinamik trycloudflare adresini otomatik çeker.
+ * Bulamazsa env.APP_PUBLIC_URL veya process.env.APP_PUBLIC_URL'e fallback yapar.
+ */
+async function getEffectivePublicUrl(): Promise<string> {
+  try {
+    const res = await axios.get('http://127.0.0.1:20241/metrics', { timeout: 1500 });
+    const match = (res.data as string).match(/userHostname="(https:\/\/[^"]+\.trycloudflare\.com)"/);
+    if (match && match[1]) {
+      log.info({ activeTunnelUrl: match[1] }, '🌐 Cloudflared metriğinden aktif tünel URL otomatik algılandı');
+      return match[1];
+    }
+  } catch {
+    // Cloudflared metrics portu kapalıysa veya çalışmıyorsa sessizce geç
+  }
+
+  const envUrl = process.env.APP_PUBLIC_URL || env.APP_PUBLIC_URL;
+  if (envUrl) {
+    return envUrl;
+  }
+
+  throw new Error("APP_PUBLIC_URL eksik, görsel/video URL'si oluşturulamıyor");
+}
+
+/**
  * Instagram'a gönderi paylaş (Görsel + Metin)
  */
 export async function postToInstagram(
@@ -22,13 +47,10 @@ export async function postToInstagram(
 ): Promise<InstagramPostResult> {
   const token = env.IG_ACCESS_TOKEN;
   const igUserId = env.IG_ACCOUNT_ID;
-  const publicAppUrl = env.APP_PUBLIC_URL;
+  const publicAppUrl = await getEffectivePublicUrl();
 
   if (!token || !igUserId) {
     throw new Error('IG_ACCESS_TOKEN veya IG_ACCOUNT_ID eksik');
-  }
-  if (!publicAppUrl) {
-    throw new Error("APP_PUBLIC_URL eksik, görsel URL'si oluşturulamıyor");
   }
 
   if (!mediaPath || !existsSync(mediaPath)) {
@@ -80,6 +102,7 @@ export async function postToInstagram(
     if (isVideo) {
       containerParams.media_type = 'REELS';
       containerParams.video_url = mediaUrl;
+      containerParams.share_to_feed = true; // Hem Reels sekmesinde hem Profil akışında görünsün
     } else {
       containerParams.image_url = mediaUrl;
     }
@@ -95,12 +118,12 @@ export async function postToInstagram(
       throw new Error('Instagram media container oluşturulamadı');
     }
 
-    log.debug({ creationId }, 'Instagram media container oluşturuldu. Yayınlanıyor...');
+    log.debug({ creationId }, 'Instagram media container oluşturuldu');
 
-    // Eğer video ise (Reels) container'ın işlenmesi biraz vakit alabilir. (Polling gerekebilir ama şimdilik bekleyelim)
+    // Eğer video ise (Reels) Meta sunucularında işlenmesini bekle
     if (isVideo) {
-      log.info('Video işlenmesi için 15 saniye bekleniyor...');
-      await new Promise((resolve) => setTimeout(resolve, 15000));
+      log.info({ creationId }, 'Reels videosunun Meta sunucularında işlenmesi bekleniyor...');
+      await waitForMediaContainerReady(creationId, token);
     }
 
     // 2. Container'ı yayınla
@@ -145,3 +168,50 @@ export async function postToInstagram(
     throw new Error(`Instagram Yayınlama Hatası: ${errorMsg}`);
   }
 }
+
+/**
+ * Reels videosunun Meta Graph API sunucularında kodlanmasını ve hazır olmasını bekler
+ */
+async function waitForMediaContainerReady(
+  creationId: string,
+  token: string,
+  maxAttempts = 20,
+): Promise<void> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const statusRes = await axios.get(`https://graph.facebook.com/v21.0/${creationId}`, {
+        params: {
+          fields: 'status_code,status',
+          access_token: token,
+        },
+      });
+
+      const statusCode = statusRes.data?.status_code;
+      log.debug({ creationId, statusCode, attempt }, 'Instagram Reels container durumu kontrol ediliyor');
+
+      if (statusCode === 'FINISHED') {
+        log.info({ creationId, attempt }, '✅ Instagram Reels container hazır');
+        return;
+      }
+
+      if (statusCode === 'ERROR') {
+        throw new Error(`Instagram Reels video işleme hatası: ${statusRes.data?.status ?? 'Bilinmeyen hata'}`);
+      }
+
+      if (statusCode === 'EXPIRED') {
+        throw new Error('Instagram Reels video container süresi doldu (EXPIRED)');
+      }
+    } catch (err: any) {
+      if (err.message?.includes('Instagram Reels')) {
+        throw err;
+      }
+      log.warn({ err: err.message, attempt }, 'Container durumu sorgulanamadı, tekrar deneniyor...');
+    }
+
+    // IN_PROGRESS: 4 saniye bekle
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+  }
+
+  throw new Error(`Instagram Reels container ${maxAttempts * 4} saniye içinde hazır olmadı (Timeout)`);
+}
+

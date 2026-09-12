@@ -77,6 +77,8 @@ async function processJob(job: Job<ProcessJobData>): Promise<void> {
           sourceUrl: item.url,
           category: articleData.category ?? 'Genel',
           threadTweets: (articleData.threadTweets as string[]) ?? undefined,
+          hasReelVideo: !!articleData.videoPath,
+          instagramCaption: articleData.instagramCaption ?? undefined,
         });
         log.info({ processedId: result.processedArticleId }, '📲 Telegram onayı istendi');
       }
