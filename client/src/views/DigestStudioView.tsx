@@ -18,6 +18,8 @@ import {
   fetchDigestCandidates,
   composeDigest,
   publishDigestToInstagram,
+  saveDigestOrder,
+  sendDigestToTelegram,
 } from '../lib/api';
 
 export const DigestStudioView: React.FC = () => {
@@ -27,6 +29,8 @@ export const DigestStudioView: React.FC = () => {
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(true);
   const [isComposing, setIsComposing] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isSendingTelegram, setIsSendingTelegram] = useState(false);
+  const [orderSavedToast, setOrderSavedToast] = useState(false);
   const [composedDigest, setComposedDigest] = useState<DigestResult | null>(null);
   const [caption, setCaption] = useState('');
   const [history, setHistory] = useState<any[]>([]);
@@ -43,7 +47,7 @@ export const DigestStudioView: React.FC = () => {
     try {
       const data = await fetchDigestCandidates();
       setCandidates(data);
-      // Varsayılan olarak ilk 7 adayı seçili yap
+      // Varsayılan olarak adayların ilk 7'sini (özel sıralamaya göre dizilmiş halini) seçili yap
       const defaultSelected = data.slice(0, 7).map((c) => c.id);
       setSelectedIds(defaultSelected);
     } catch (err: any) {
@@ -66,15 +70,21 @@ export const DigestStudioView: React.FC = () => {
   };
 
   const toggleSelect = (id: string) => {
+    let next: string[];
     if (selectedIds.includes(id)) {
-      setSelectedIds(selectedIds.filter((item) => item !== id));
+      next = selectedIds.filter((item) => item !== id);
     } else {
       if (selectedIds.length >= 7) {
         alert('Instagram Reels bültenine en fazla 7 haber ekleyebilirsiniz.');
         return;
       }
-      setSelectedIds([...selectedIds, id]);
+      next = [...selectedIds, id];
     }
+    setSelectedIds(next);
+    saveDigestOrder(next).then(() => {
+      setOrderSavedToast(true);
+      setTimeout(() => setOrderSavedToast(false), 2500);
+    }).catch(() => {});
   };
 
   const moveItem = (index: number, direction: 'up' | 'down') => {
@@ -85,6 +95,11 @@ export const DigestStudioView: React.FC = () => {
     next[index] = next[targetIndex];
     next[targetIndex] = temp;
     setSelectedIds(next);
+    // Sıralamayı anında backend ve Redis'e kaydet
+    saveDigestOrder(next).then(() => {
+      setOrderSavedToast(true);
+      setTimeout(() => setOrderSavedToast(false), 2500);
+    }).catch((err) => console.warn('Sıralama kaydedilemedi:', err));
   };
 
   const handleCompose = async () => {
@@ -137,6 +152,26 @@ export const DigestStudioView: React.FC = () => {
       });
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handleSendTelegram = async () => {
+    if (!composedDigest) return;
+    setIsSendingTelegram(true);
+    setStatusMessage(null);
+    try {
+      await sendDigestToTelegram(composedDigest.digestId);
+      setStatusMessage({
+        type: 'success',
+        text: 'Bülten Telegram onayına başarıyla gönderildi! Telegram uygulamanızdan videoyu inceleyip onaylayabilirsiniz.',
+      });
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err.message || 'Telegram onayına gönderilirken hata oluştu.',
+      });
+    } finally {
+      setIsSendingTelegram(false);
     }
   };
 
@@ -229,7 +264,7 @@ export const DigestStudioView: React.FC = () => {
                     Bülten Adayları ({candidates.length})
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Bugün X'te paylaşılan ve henüz bültende yer almamış haberler
+                    Son bültenden bu yana X'te paylaşılan ve henüz bültende yer almamış haberler
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -326,9 +361,17 @@ export const DigestStudioView: React.FC = () => {
             {orderedSelectedArticles.length > 0 && (
               <div className="glass-card p-5 rounded-2xl space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                    Slayt Akış Sırası ({orderedSelectedArticles.length} Slayt)
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      Slayt Akış Sırası ({orderedSelectedArticles.length} Slayt)
+                    </h3>
+                    {orderSavedToast && (
+                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md flex items-center gap-1 transition">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Sıralama Kaydedildi
+                      </span>
+                    )}
+                  </div>
                   <span className="text-xs text-slate-400">
                     Yaklaşık Video Süresi: ~{orderedSelectedArticles.length * 4.5} sn
                   </span>
@@ -457,17 +500,30 @@ export const DigestStudioView: React.FC = () => {
                     />
                   </div>
 
-                  {/* Publish Button */}
-                  <button
-                    onClick={handlePublish}
-                    disabled={isPublishing}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-pink-500/30 transition cursor-pointer disabled:opacity-50"
-                  >
-                    <Send className={`w-4 h-4 ${isPublishing ? 'animate-spin' : ''}`} />
-                    <span>
-                      {isPublishing ? 'Instagram Reels Yükleniyor...' : 'Instagram Reels Olarak Paylaş'}
-                    </span>
-                  </button>
+                  {/* Action Buttons */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      onClick={handleSendTelegram}
+                      disabled={isSendingTelegram || isPublishing}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-500/20 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className={`w-4 h-4 ${isSendingTelegram ? 'animate-spin' : ''}`} />
+                      <span>
+                        {isSendingTelegram ? 'Telegram Onayına Gönderiliyor...' : 'Telegram Onayına Gönder (Bot)'}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={handlePublish}
+                      disabled={isPublishing || isSendingTelegram}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-pink-500/20 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <Film className={`w-4 h-4 ${isPublishing ? 'animate-spin' : ''}`} />
+                      <span>
+                        {isPublishing ? 'Instagram Reels Yükleniyor...' : 'Doğrudan Instagram\'da Paylaş'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="p-8 text-center rounded-xl bg-slate-900/40 border border-dashed border-slate-800 min-h-[380px] flex flex-col items-center justify-center">

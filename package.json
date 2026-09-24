@@ -4,7 +4,7 @@
   "description": "Automated PC hardware news → Turkish tweets pipeline",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "chcp 65001 >NUL && tsx watch src/main.ts",
+    "dev": "chcp 65001 >NUL && tsx watch --exclude output src/main.ts",
     "start": "node dist/main.js",
     "build": "tsc",
     "build:client": "pnpm --filter client build",

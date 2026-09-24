@@ -2,7 +2,7 @@ import { createLogger } from '../../lib/logger.js';
 import { db } from '../../db/index.js';
 import { publishedTweets } from '../../db/schema.js';
 import { gte, and, isNull } from 'drizzle-orm';
-import { twitterReadClient } from '../publisher/twitter.js';
+import { twitterReadClient, isXManualMode } from '../publisher/twitter.js';
 
 const log = createLogger('analytics');
 
@@ -17,7 +17,14 @@ const log = createLogger('analytics');
  * X Premium alındıktan sonra bu fonksiyon tam aktif olacak.
  */
 export async function refreshTweetMetrics(lookbackHours: number): Promise<number> {
+  // Eğer X Manuel Modu aktifse, X API Read isteklerini tamamen atla (bütçe koruması)
+  if (await isXManualMode()) {
+    log.debug('X Manuel Mod devrede, Analytics X API okuma istekleri atlanıyor (0 TL maliyet)');
+    return 0;
+  }
+
   const since = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+
 
   // Son N saatte yayınlanan ve henüz analytics güncellenmemiş tweetleri çek
   const tweets = await db

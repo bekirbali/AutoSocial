@@ -4,7 +4,7 @@ import { redisConnection, QUEUE_NAMES, type PublishJobData } from '../lib/queue.
 import { db } from '../db/index.js';
 import { processedArticles, publishedTweets, publishedInstagramPosts, rawArticles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { postTweet, postReply } from '../modules/publisher/twitter.js';
+import { postTweet, postReply, isXManualMode } from '../modules/publisher/twitter.js';
 import { postToInstagram } from '../modules/publisher/instagram.js';
 import { withRateLimit } from '../modules/publisher/rateLimiter.js';
 import { getTodayPublishedCount } from '../modules/publisher/scheduler.js';
@@ -95,20 +95,29 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
         log.info({ processedArticleId }, 'X (Twitter) için zaten yayınlanmış, atlanıyor.');
       } else {
         let currentTweetId: string;
+        let currentTweetUrl: string;
 
-        // X için: 16:9 yatay kart önceliklidir (Reels videosu 9:16 olduğu için X feed'ine uygun değildir)
-        const twitterMedia = (article.mediaType === 'video' && !article.videoPath?.includes('_reel.mp4'))
-          ? (article.videoPath ?? article.imagePath ?? undefined)
-          : (article.imagePath ?? article.videoPath ?? undefined);
+        const manualMode = await isXManualMode();
+        if (manualMode) {
+          log.info({ processedArticleId }, '🖐 X Manuel Mod devrede: X API çağrısı atlanıyor, yerel tweet kaydı oluşturuluyor.');
+          currentTweetId = `manual-${Date.now()}`;
+          currentTweetUrl = 'https://x.com';
+        } else {
+          // X için: 16:9 yatay kart önceliklidir (Reels videosu 9:16 olduğu için X feed'ine uygun değildir)
+          const twitterMedia = (article.mediaType === 'video' && !article.videoPath?.includes('_reel.mp4'))
+            ? (article.videoPath ?? article.imagePath ?? undefined)
+            : (article.imagePath ?? article.videoPath ?? undefined);
 
-        const { tweetId, tweetUrl } = await withRateLimit(() =>
-          postTweet(
-            article.tweetText,
-            (article.hashtags as string[]) ?? [],
-            twitterMedia,
-          ),
-        );
-        currentTweetId = tweetId;
+          const { tweetId, tweetUrl } = await withRateLimit(() =>
+            postTweet(
+              article.tweetText,
+              (article.hashtags as string[]) ?? [],
+              twitterMedia,
+            ),
+          );
+          currentTweetId = tweetId;
+          currentTweetUrl = tweetUrl;
+        }
 
         // Eğer thread ise diğer tweetleri reply olarak at
         // TODO: (Faz 1-3) 15 tweet/gün limitine takılmamak için thread özelliği şimdilik askıya alındı
@@ -150,11 +159,12 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
         // published_tweets tablosuna kaydet
         await db.insert(publishedTweets).values({
           processedId: article.id,
-          tweetId,
-          tweetUrl,
+          tweetId: currentTweetId,
+          tweetUrl: currentTweetUrl,
           replyTweetId,
         });
-        log.info({ tweetId, tweetUrl, processedArticleId }, '✅ Tweet yayınlandı');
+        log.info({ tweetId: currentTweetId, tweetUrl: currentTweetUrl, processedArticleId, manualMode }, '✅ Tweet yayınlandı (veya manuel onaylandı)');
+
       }
     }
 
@@ -212,8 +222,11 @@ async function publishJob(job: Job<PublishJobData>): Promise<void> {
 
     log.info({ processedArticleId }, '✅ Makale yayınlama tamamlandı');
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    log.error({ err: errMsg, processedArticleId }, '❌ Makale yayınlama başarısız');
+    const detail = (error as any)?.data?.detail || (error as any)?.data?.title || (error as any)?.errors?.[0]?.message;
+    const baseMsg = error instanceof Error ? error.message : String(error);
+    const errMsg = detail ? `${baseMsg} (${detail})` : baseMsg;
+
+    log.error({ err: errMsg, rawData: (error as any)?.data, processedArticleId }, '❌ Makale yayınlama başarısız');
 
     // Durumu 'failed' olarak işaretle
     await db

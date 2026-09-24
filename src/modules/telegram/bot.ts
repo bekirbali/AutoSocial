@@ -2,21 +2,28 @@ import { Telegraf, Markup } from 'telegraf';
 import { createLogger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { db } from '../../db/index.js';
-import { processedArticles, rawArticles } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
-import { publishQueue, type PublishJobData } from '../../lib/queue.js';
+import { processedArticles, rawArticles, instagramDigests } from '../../db/schema.js';
+import { eq, and, desc, gte } from 'drizzle-orm';
+import { publishQueue, removePendingPublishJobs, type PublishJobData } from '../../lib/queue.js';
 import { getNextPublishSlot } from '../../scheduler/cron.js';
 import { existsSync } from 'fs';
+import { isXManualMode } from '../publisher/twitter.js';
 
 const log = createLogger('telegram:bot');
+
 
 let bot: Telegraf | null = null;
 
 if (env.TELEGRAM_BOT_TOKEN) {
-  bot = new Telegraf(env.TELEGRAM_BOT_TOKEN);
+  bot = new Telegraf(env.TELEGRAM_BOT_TOKEN, {
+    handlerTimeout: 600_000, // 10 dakika (FFmpeg video derleme, Meta Graph API Reels işleme ve video yükleme için)
+  });
 
-  bot.catch((err) => {
-    log.error({ err: err instanceof Error ? err.message : err }, 'Telegraf bot hatası (polling vs.)');
+  bot.catch((err, ctx) => {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    const updateType = ctx?.updateType;
+    const actionData = ctx?.callbackQuery && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+    log.error({ err: errorMsg, updateType, actionData }, 'Telegraf bot hatası (polling / handler)');
   });
 
   // ─── ACTION HANDLERS ────────────────────────────────────────────────────────
@@ -30,6 +37,9 @@ if (env.TELEGRAM_BOT_TOKEN) {
       await ctx.answerCbQuery('Hatalı ID');
       return;
     }
+
+    // Telegram client'ındaki buton yükleniyor animasyonunu hemen sonlandır
+    await ctx.answerCbQuery(action === 'pub' ? 'Hemen yayınlama başlatıldı...' : 'Sıraya alınıyor...').catch(() => {});
 
     try {
       // Tekil haberler kural gereği istisnasız yalnızca X'e gider; Instagram toplu bülten (digest) içindir
@@ -50,10 +60,7 @@ if (env.TELEGRAM_BOT_TOKEN) {
         scheduledFor: publishAt.toISOString(),
       };
 
-      const existingJob = await publishQueue.getJob(`publish-${articleId}`);
-      if (existingJob) {
-        await existingJob.remove().catch(() => {});
-      }
+      await removePendingPublishJobs(articleId);
 
       await publishQueue.add(
         `publish:${articleId}`,
@@ -61,11 +68,16 @@ if (env.TELEGRAM_BOT_TOKEN) {
         { delay: delayMs, jobId: `publish-${articleId}-${Date.now()}` },
       );
 
-      // 3. Mesajı güncelle (butonları kaldır, onaylandı yaz)
+      const isManual = await isXManualMode();
+      const manualNotice = (isManual && (platform === 'x' || platform === 'all'))
+        ? '\n\n🖐 <i>X Manuel Mod devrede: X API çağrısı yapılmadı (0 TL). İçeriği ve görseli elle paylaşabilirsiniz. Saat 13:00/19:00 bültenine dahil edilecektir.</i>'
+        : '';
+
       const platformStr = platform === 'all' ? 'X + Instagram' : (platform === 'ig' ? 'Instagram' : 'X');
-      const captionStatus = action === 'pub' 
+      const captionStatus = (action === 'pub' 
         ? `✅ <b>HEMEN YAYINLANDI (${platformStr})</b>`
-        : `✅ <b>ONAYLANDI (${platformStr})</b> (Sıraya alındı: ${publishAt.toLocaleTimeString('tr-TR')})`;
+        : `✅ <b>ONAYLANDI (${platformStr})</b> (Sıraya alındı: ${publishAt.toLocaleTimeString('tr-TR')})`) + manualNotice;
+
 
       await ctx.editMessageCaption(
         `${ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message ? ctx.callbackQuery.message.caption : ''}\n\n${captionStatus}`,
@@ -96,12 +108,18 @@ if (env.TELEGRAM_BOT_TOKEN) {
       return;
     }
 
+    // Kullanıcıya anında geri bildirim ver
+    await ctx.answerCbQuery('Makale reddedildi.').catch(() => {});
+
     try {
       // 1. Veritabanında durumu 'rejected' yap
       await db
         .update(processedArticles)
         .set({ status: 'rejected', updatedAt: new Date() })
         .where(eq(processedArticles.id, articleId));
+
+      // Kuyruktaki delayed işi kaldır
+      await removePendingPublishJobs(articleId);
 
       // 2. Mesajı güncelle
       await ctx.editMessageCaption(
@@ -116,15 +134,18 @@ if (env.TELEGRAM_BOT_TOKEN) {
         ).catch(() => {});
       }
 
-      await ctx.answerCbQuery('Makale reddedildi.');
       log.info({ articleId }, 'Makale Telegram üzerinden reddedildi');
     } catch (error) {
       log.error({ err: error instanceof Error ? error.message : error }, 'Reddetme hatası');
-      await ctx.answerCbQuery('Bir hata oluştu!');
     }
   });
 
   // ─── INSTAGRAM DIGEST ACTIONS & COMMANDS ────────────────────────────────────
+
+  // 'noop' tıklama işleyicisi (Yükleniyor butonuna basıldığında)
+  bot.action('noop', async (ctx) => {
+    await ctx.answerCbQuery('⏳ İşlem devam ediyor, lütfen bekleyin...');
+  });
 
   // Bülten Onaylama veya Pas Geçme aksiyonu
   bot.action(/^digest:(pub|rej):(.+)$/, async (ctx) => {
@@ -137,51 +158,117 @@ if (env.TELEGRAM_BOT_TOKEN) {
 
     try {
       if (action === 'pub') {
-        await ctx.answerCbQuery('Instagram\'a yükleniyor, lütfen bekleyin...');
+        await ctx.answerCbQuery('🚀 Reels yayını başlatıldı, yükleniyor...');
+
+        // 1. Anında kullanıcıya görsel geri bildirim ver: Butonları yükleniyor durumuna çevir
+        await ctx.editMessageReplyMarkup({
+          inline_keyboard: [
+            [Markup.button.callback('⏳ Instagram\'a Yükleniyor... (Lütfen bekleyin)', 'noop')],
+          ],
+        }).catch(() => {});
+
         const { publishDigest } = await import('../publisher/digestManager.js');
-        await publishDigest(digestId);
+        const igResult = await publishDigest(digestId);
 
-        const currentCaption =
-          ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message
-            ? ctx.callbackQuery.message.caption
-            : '';
-        await ctx.editMessageCaption(
-          `${currentCaption}\n\n✅ <b>INSTAGRAM'A REELS OLARAK YAYINLANDI!</b>`,
-          { parse_mode: 'HTML' }
-        ).catch(() => {});
+        // 2. Mesajı ve butonları yayınlandı olarak güncelle
+        await syncDigestStatusToTelegram(digestId, 'published', igResult.igPostUrl, ctx);
+
+        log.info({ digestId, igPostUrl: igResult.igPostUrl }, 'Bülten Telegram üzerinden onaylandı ve yayınlandı');
       } else {
-        const { rejectDigest } = await import('../publisher/digestManager.js');
-        await rejectDigest(digestId);
+        await ctx.answerCbQuery('Bülten pas geçiliyor...').catch(() => {});
 
-        const currentCaption =
-          ctx.callbackQuery.message && 'caption' in ctx.callbackQuery.message
-            ? ctx.callbackQuery.message.caption
-            : '';
-        await ctx.editMessageCaption(
-          `${currentCaption}\n\n❌ <b>BÜLTEN İPTAL EDİLDİ / PAS GEÇİLDİ</b>`,
-          { parse_mode: 'HTML' }
-        ).catch(() => {});
-        await ctx.answerCbQuery('Bülten iptal edildi.');
+        const { rejectDigest } = await import('../publisher/digestManager.js');
+        const rejected = await rejectDigest(digestId);
+
+        if (!rejected) {
+          await ctx.reply('⚠️ Bu bülten zaten Instagram\'da yayınlanmış, pas geçilemez!');
+          return;
+        }
+
+        await syncDigestStatusToTelegram(digestId, 'rejected', undefined, ctx);
+        log.info({ digestId }, 'Bülten Telegram üzerinden pas geçildi');
       }
     } catch (err: any) {
       log.error({ err: err.message, digestId }, 'Bülten aksiyon hatası');
+      // Hata durumunda butonları tekrar dene şeklinde geri yükle
+      if (action === 'pub') {
+        await ctx.editMessageReplyMarkup({
+          inline_keyboard: [
+            [
+              Markup.button.callback('🔄 Tekrar Dene', `digest:pub:${digestId}`),
+              Markup.button.callback('❌ Pas Geç', `digest:rej:${digestId}`),
+            ],
+          ],
+        }).catch(() => {});
+      }
       await ctx.reply(`❌ Bülten işlemi sırasında hata oluştu: ${err.message}`);
     }
   });
 
   // Manuel /bulten komutu — istenildiği an bülten üretip onaya sunar
+  // Kullanım: /bulten (son bültenden bu yana) veya /bulten 12 (son 12 saat)
   bot.command(['bulten', 'digest'], async (ctx) => {
-    const statusMsg = await ctx.reply('🎬 Toplu haber bülteni kontrol ediliyor ve hazırlanıyor, lütfen bekleyin...');
+    const args = ctx.message.text.split(/\s+/).slice(1).filter(Boolean);
+    let customHours: number | undefined;
+    if (args.length > 0) {
+      const parsed = parseFloat(args[0]!);
+      if (!isNaN(parsed) && parsed > 0 && parsed <= 72) {
+        customHours = parsed;
+      }
+    }
+
+    const isForce = args.some((a) => ['force', 'yeni', 'new'].includes(a.toLowerCase()));
+
+    // 1. Kullanıcı yeni bülten zorlamadıysa, admin panelden son 2 saat içinde derlenmiş
+    // ve onay bekleyen ('pending') hazır bir bülten var mı kontrol et
+    if (!isForce && !customHours) {
+      try {
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        const [pendingDigest] = await db
+          .select()
+          .from(instagramDigests)
+          .where(
+            and(
+              eq(instagramDigests.status, 'pending'),
+              gte(instagramDigests.createdAt, twoHoursAgo),
+            ),
+          )
+          .orderBy(desc(instagramDigests.createdAt))
+          .limit(1);
+
+        if (pendingDigest && pendingDigest.videoPath && existsSync(pendingDigest.videoPath)) {
+          log.info({ digestId: pendingDigest.id }, 'Panelden derlenmiş bekleyen bülten bulundu, onaya sunuluyor');
+          await sendDigestApprovalRequest({
+            digestId: pendingDigest.id,
+            type: (pendingDigest.type as any) || 'manual',
+            articleCount: pendingDigest.articleIds.length,
+            videoPath: pendingDigest.videoPath,
+            caption: pendingDigest.caption,
+            periodInfo: 'Panelden derlenen güncel bülten',
+          });
+          return;
+        }
+      } catch (checkErr: any) {
+        log.warn({ err: checkErr.message }, 'Bekleyen bülten kontrolü başarısız oldu, yeni oluşturulacak');
+      }
+    }
+
+    const waitText = customHours
+      ? `🎬 Son ${customHours} saatin haberleriyle bülten kontrol ediliyor ve hazırlanıyor, lütfen bekleyin...`
+      : '🎬 Son bültenden bu yana yayınlanan haberlerle bülten kontrol ediliyor ve hazırlanıyor, lütfen bekleyin...';
+
+    const statusMsg = await ctx.reply(waitText);
     try {
       const { createDailyDigest } = await import('../publisher/digestManager.js');
-      const digest = await createDailyDigest('manual');
+      const digest = await createDailyDigest('manual', customHours);
 
       if (!digest) {
+        const rangeText = customHours ? `son ${customHours} saat içinde` : 'son bültenden bu yana';
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          'ℹ️ Şu anda bültene eklenecek yeni yayınlanmış bir haber bulunamadı.\n(X\'te yayınlanmış ve henüz bültende yer almamış haberler toplanır).'
+          `ℹ️ ${rangeText} X'te yayınlanmış ve henüz bültende yer almamış yeni bir haber bulunamadı.`
         );
       } else {
         await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
@@ -324,8 +411,8 @@ export async function startTelegramBot(): Promise<void> {
   }
 
   try {
-    bot.launch({ dropPendingUpdates: true }).then(() => {
-      log.info('🤖 Telegram botu başlatıldı');
+    bot.launch({ dropPendingUpdates: true }, () => {
+      log.info('🤖 Telegram botu başlatıldı (Polling aktif)');
     }).catch((err) => {
       log.error({ err: err instanceof Error ? err.message : err }, 'Telegram bot başlatılamadı (başka bir process çalışıyor olabilir)');
     });
@@ -370,10 +457,14 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
     return false;
   }
 
+  const isManual = await isXManualMode();
+  const pubXLabel = isManual ? "🚀 Elle Paylaşıldı Onayla" : "🚀 X'e Hemen Yayınla";
+  const queueXLabel = isManual ? "🕒 Sıraya Al (Manuel)" : "🕒 Sıraya Al (X)";
+
   const buttons = Markup.inlineKeyboard([
     [
-      Markup.button.callback("🚀 X'e Hemen Yayınla", `pub:x:${data.articleId}`),
-      Markup.button.callback("🕒 Sıraya Al (X)", `queue:x:${data.articleId}`),
+      Markup.button.callback(pubXLabel, `pub:x:${data.articleId}`),
+      Markup.button.callback(queueXLabel, `queue:x:${data.articleId}`),
     ],
     [
       Markup.button.callback('✏️ Düzenle', `edit_instruction`),
@@ -382,10 +473,12 @@ export async function sendApprovalRequest(data: ApprovalRequestData): Promise<bo
   ]);
 
   let caption = `📰 <b>YENİ HABER ONAYI BEKLİYOR</b>\n\n`
+    + (isManual ? `🖐 <b>X Modu:</b> MANUEL (0 TL - API Pasif, Elle Paylaşılacak)\n` : '')
     + `<b>Kategori:</b> ${data.category || 'Belirsiz'}\n`
     + `<b>Skor:</b> ${data.score}\n`
     + (data.hasReelVideo ? `🎬 <b>Instagram Reels Videosu:</b> Hazır (9:16 + Müzik)\n` : '')
     + `\n🐦 <b>X (Twitter) Metni:</b>\n${data.tweetText}\n\n`;
+
 
   if (data.instagramCaption) {
     // Telegram caption 1024 karakter sınırına takılmamak için özet göster
@@ -523,6 +616,127 @@ export interface DigestApprovalData {
   articleCount: number;
   videoPath: string;
   caption: string;
+  periodInfo?: string;
+}
+
+/**
+ * Telegram caption'ının 1024 karakter sınırını aşmamasını garanti eder.
+ */
+export function formatSafeDigestCaption(baseText: string, statusAppend: string, maxLimit = 1015): string {
+  const cleanBase = (baseText || '').trim();
+  const neededAppend = `\n\n${statusAppend}`;
+
+  if (cleanBase.length + neededAppend.length <= maxLimit) {
+    return `${cleanBase}${neededAppend}`;
+  }
+
+  // Sınırı aşıyorsa baseText'i kırp ve sonuna statusAppend ekle
+  const allowedBaseLen = Math.max(50, maxLimit - neededAppend.length - 4);
+  const truncatedBase = cleanBase.substring(0, allowedBaseLen) + '...';
+  return `${truncatedBase}${neededAppend}`;
+}
+
+/**
+ * Bülten yayınlandığında veya pas geçildiğinde Telegram'daki onay mesajını günceller.
+ * İster bot action içinden, ister admin panelden tetiklensin her iki durumda da çalışır.
+ */
+export async function syncDigestStatusToTelegram(
+  digestId: string,
+  action: 'published' | 'rejected',
+  igPostUrl?: string,
+  ctx?: any,
+): Promise<void> {
+  if (!bot && !ctx) return;
+
+  try {
+    const { redis } = await import('../../lib/redis.js');
+    let messageId: number | undefined;
+    let originalCaption: string | undefined;
+
+    if (ctx?.callbackQuery?.message) {
+      messageId = ctx.callbackQuery.message.message_id;
+      if ('caption' in ctx.callbackQuery.message) {
+        originalCaption = ctx.callbackQuery.message.caption;
+      }
+    }
+
+    if (!messageId) {
+      const msgIdStr = await redis.get(`tg:digest_msg:${digestId}`);
+      if (msgIdStr) {
+        messageId = parseInt(msgIdStr, 10);
+      }
+    }
+
+    const redisCaption = await redis.get(`tg:digest_caption:${digestId}`);
+    if (redisCaption) {
+      originalCaption = redisCaption;
+    }
+
+    const statusText = action === 'published'
+      ? '✅ <b>INSTAGRAM\'A REELS OLARAK YAYINLANDI!</b>'
+      : '❌ <b>BÜLTEN İPTAL EDİLDİ / PAS GEÇİLDİ</b>';
+
+    const newCaption = formatSafeDigestCaption(originalCaption || '', statusText);
+
+    const markup = (action === 'published' && igPostUrl)
+      ? Markup.inlineKeyboard([
+          [Markup.button.url('🎬 Instagram\'da Görüntüle', igPostUrl)],
+        ])
+      : Markup.inlineKeyboard([]);
+
+    // Eğer ctx varsa önce onun üzerinden dene
+    if (ctx) {
+      try {
+        await ctx.editMessageCaption(newCaption, {
+          parse_mode: 'HTML',
+          reply_markup: markup.reply_markup,
+        });
+      } catch (captionErr: any) {
+        log.warn({ err: captionErr.message, digestId }, 'ctx.editMessageCaption başarısız oldu, düz metin fallback deneniyor');
+        // HTML parse hatası ihtimaline karşı parse_mode olmadan düz metin dene
+        try {
+          const plainText = newCaption.replace(/<[^>]+>/g, '');
+          await ctx.editMessageCaption(plainText, {
+            reply_markup: markup.reply_markup,
+          });
+        } catch {
+          await ctx.editMessageReplyMarkup(markup.reply_markup).catch(() => {});
+        }
+      }
+      return;
+    }
+
+    // Admin panel veya harici çağrılarda bot.telegram üzerinden güncelle
+    if (bot && env.TELEGRAM_CHAT_ID && messageId) {
+      await bot.telegram.editMessageReplyMarkup(
+        env.TELEGRAM_CHAT_ID,
+        messageId,
+        undefined,
+        markup.reply_markup
+      ).catch(() => {});
+
+      try {
+        await bot.telegram.editMessageCaption(
+          env.TELEGRAM_CHAT_ID,
+          messageId,
+          undefined,
+          newCaption,
+          { parse_mode: 'HTML' }
+        );
+      } catch (captionErr: any) {
+        log.warn({ err: captionErr.message, digestId }, 'bot.telegram.editMessageCaption başarısız oldu, düz metin deneniyor');
+        const plainText = newCaption.replace(/<[^>]+>/g, '');
+        await bot.telegram.editMessageCaption(
+          env.TELEGRAM_CHAT_ID,
+          messageId,
+          undefined,
+          plainText
+        ).catch(() => {});
+      }
+    }
+  } catch (err: any) {
+    log.error({ err: err.message, digestId }, 'Telegram bülten senkronizasyonu hatası');
+  }
 }
 
 /**
@@ -553,29 +767,75 @@ export async function sendDigestApprovalRequest(data: DigestApprovalData): Promi
     ],
   ]);
 
-  let text = `🎬 <b>DONANIMPOST ${typeName}</b>\n\n`
-    + `📊 <b>Kapsanan Haber Sayısı:</b> ${data.articleCount}\n\n`
-    + `📸 <b>Instagram Açıklaması:</b>\n${data.caption}\n\n`
-    + `Instagram Reels olarak paylaşılsın mı?`;
+  // Telegram video caption limiti 1024 karakterdir.
+  // Onaylandığında mesaja eklenecek durum ibaresi (~50 karakter) için 960 karakter güvenli tavan belirliyoruz.
+  const MAX_SAFE_CAPTION_LEN = 960;
+  const header = `🎬 <b>DONANIMPOST ${typeName}</b>\n\n`
+    + `📊 <b>Kapsanan Haber Sayısı:</b> ${data.articleCount}\n`
+    + (data.periodInfo ? `⏱ <b>Aralık:</b> ${data.periodInfo}\n\n` : '\n')
+    + `📸 <b>Instagram Açıklaması:</b>\n`;
+  const footer = `\n\nInstagram Reels olarak paylaşılsın mı?`;
 
-  if (text.length > 1020) {
-    text = text.substring(0, 1015) + '...';
+  const availableCaptionLen = MAX_SAFE_CAPTION_LEN - header.length - footer.length;
+
+  let igPreview = data.caption.trim();
+  if (igPreview.length > availableCaptionLen) {
+    // Video caption sınırını aşıyorsa satır satır son tam satıra kadar alalım:
+    const hint = '\n\n<i>(Detaylı tam açıklama aşağıdaki yanıtta yer almaktadır 👇)</i>';
+    const maxLinesLen = availableCaptionLen - hint.length;
+    const lines = igPreview.split('\n');
+    let accumulated = '';
+    for (const line of lines) {
+      if ((accumulated + (accumulated ? '\n' : '') + line).length <= maxLinesLen) {
+        accumulated += (accumulated ? '\n' : '') + line;
+      } else {
+        break;
+      }
+    }
+    igPreview = (accumulated || igPreview.substring(0, maxLinesLen)) + hint;
+  }
+
+  let text = `${header}${igPreview}${footer}`;
+
+  if (text.length > MAX_SAFE_CAPTION_LEN) {
+    text = text.substring(0, MAX_SAFE_CAPTION_LEN - 5) + '...';
   }
 
   try {
+    let sentMsg;
     if (data.videoPath && existsSync(data.videoPath)) {
-      await bot.telegram.sendVideo(
+      sentMsg = await bot.telegram.sendVideo(
         env.TELEGRAM_CHAT_ID,
         { source: data.videoPath },
         { caption: text, parse_mode: 'HTML', ...buttons },
       );
     } else {
-      await bot.telegram.sendMessage(
+      sentMsg = await bot.telegram.sendMessage(
         env.TELEGRAM_CHAT_ID,
         text,
         { parse_mode: 'HTML', ...buttons },
       );
     }
+
+    if (sentMsg && sentMsg.message_id) {
+      try {
+        const { redis } = await import('../../lib/redis.js');
+        await redis.set(`tg:digest_msg:${data.digestId}`, sentMsg.message_id, 'EX', 14 * 86400);
+        await redis.set(`tg:digest_caption:${data.digestId}`, text, 'EX', 14 * 86400);
+      } catch (redisErr: any) {
+        log.warn({ err: redisErr.message }, 'Redis tg:digest_msg kaydı yapılamadı');
+      }
+
+      // Kullanıcının metnin tamamını eksiksiz görmesi ve kolayca kopyalayabilmesi için tam açıklamayı yanıt olarak gönder
+      await bot.telegram.sendMessage(
+        env.TELEGRAM_CHAT_ID,
+        `📋 <b>Tam Instagram Reels Açıklaması:</b>\n\n${data.caption}`,
+        {
+          reply_parameters: { message_id: sentMsg.message_id },
+        },
+      ).catch((err: any) => log.warn({ err: err.message }, 'Bülten tam metin yanıtı gönderilemedi'));
+    }
+
     log.info({ digestId: data.digestId }, 'Bülten onay mesajı Telegram\'a gönderildi');
     return true;
   } catch (error: any) {

@@ -128,6 +128,28 @@ export const analyticsQueue = new Queue<AnalyticsJobData>(QUEUE_NAMES.ANALYTICS,
 });
 
 /**
+ * Belirli bir makaleye ait kuyrukta bekleyen (delayed veya waiting) tüm publish işlerini temizler
+ */
+export async function removePendingPublishJobs(articleId: string): Promise<number> {
+  let removedCount = 0;
+  try {
+    const jobs = await publishQueue.getJobs(['delayed', 'waiting']);
+    for (const job of jobs) {
+      const matchData = (job.data as PublishJobData)?.processedArticleId === articleId;
+      const matchName = job.name === `publish:${articleId}`;
+      const matchId = job.id ? job.id.includes(articleId) : false;
+      if (matchData || matchName || matchId) {
+        await job.remove().catch(() => {});
+        removedCount++;
+      }
+    }
+  } catch (err) {
+    // Sessizce geç veya logla
+  }
+  return removedCount;
+}
+
+/**
  * Tüm queue'lara graceful close gönder
  */
 export async function closeQueues(): Promise<void> {
@@ -138,3 +160,4 @@ export async function closeQueues(): Promise<void> {
     analyticsQueue.close(),
   ]);
 }
+

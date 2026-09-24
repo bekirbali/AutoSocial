@@ -9,7 +9,7 @@ import { generateTweet, generateInstagramCaption } from './ai.js';
 import { generateNewsCard } from './image.js';
 import { generateReelVideo } from './reelGenerator.js';
 import { downloadVideo } from './mediaDownloader.js';
-import { extractOpenGraphImage } from './downloader.js';
+import { extractOpenGraphImage, resolveHighResImage } from './downloader.js';
 import { hashUrl } from './dedup.js';
 import { detectCategory } from '../../config/keywords.js';
 import { env } from '../../config/env.js';
@@ -141,18 +141,18 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
     let imageSource: string | undefined;
 
     try {
-      // Eğer RSS beslemesinden görsel gelmediyse (örn: SamMobile), sayfanın OpenGraph görselini çek
-      if (!item.imageUrl && item.url) {
-        const ogImage = await extractOpenGraphImage(item.url);
-        if (ogImage) {
-          item.imageUrl = ogImage;
-          // DB'deki rawArticles tablosunu da güncelle ki bülten (digest) ve diğer servisler görseli görebilsin
-          await db
-            .update(rawArticles)
-            .set({ imageUrl: ogImage })
-            .where(eq(rawArticles.id, rawArticle.id))
-            .catch((e) => log.warn({ err: e.message }, 'rawArticles imageUrl güncellenemedi'));
-        }
+      // Yüksek çözünürlüklü görsel çözücü:
+      // RSS görselini yükseltir, gerekiyorsa OpenGraph çeker ve kalite kontrolü yapar
+      const resolvedImage = await resolveHighResImage(item.imageUrl, item.url);
+
+      if (resolvedImage.url && resolvedImage.url !== item.imageUrl) {
+        item.imageUrl = resolvedImage.url;
+        // DB'deki rawArticles tablosunu da güncelle ki bülten (digest) ve diğer servisler görseli görebilsin
+        await db
+          .update(rawArticles)
+          .set({ imageUrl: resolvedImage.url })
+          .where(eq(rawArticles.id, rawArticle.id))
+          .catch((e) => log.warn({ err: e.message }, 'rawArticles imageUrl güncellenemedi'));
       }
 
       // X (Twitter) için 16:9 görsel
@@ -163,7 +163,9 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
         item.publishedAt,
         rawArticle.id,
         '16:9',
-        item.imageUrl
+        item.imageUrl,
+        resolvedImage.buffer,
+        item.url,
       );
       imagePath = imageResult16x9.imagePath;
       imageSource = imageResult16x9.imageSource;
@@ -178,7 +180,9 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
           item.publishedAt,
           rawArticle.id,
           '9:16',
-          item.imageUrl
+          item.imageUrl,
+          resolvedImage.buffer,
+          item.url,
         );
 
         // 2. FFmpeg ile 6 saniyelik Ken Burns + müzikli Reels videosu üret

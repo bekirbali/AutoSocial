@@ -1,3 +1,4 @@
+import { isForeignDeal } from './dealFilter.js';
 import { DOMAIN_BLACKLIST, KEYWORD_BLACKLIST, ALL_KEYWORDS } from '../../config/keywords.js';
 import { createLogger } from '../../lib/logger.js';
 import type { FetchedItem } from '../fetcher/rss.js';
@@ -41,7 +42,13 @@ export function filterArticle(item: FetchedItem): FilterResult {
     return { passed: false, reason: `keyword_blacklisted:${blacklisted}` };
   }
 
-  // 5. Niş anahtar kelime eşleşmesi — hiç yoksa atla
+  // 5. Yabancı dildeki perakende indirim / mağaza fırsat haberleri (Newegg, Best Buy, $ indirimleri vb.)
+  // Hedef kitle Türkiye olduğu için bu haberlerin karşılığı yoktur.
+  if (isForeignDeal(item)) {
+    return { passed: false, reason: 'foreign_deal' };
+  }
+
+  // 6. Niş anahtar kelime eşleşmesi — hiç yoksa atla
   const hasNicheKeyword = ALL_KEYWORDS.some(
     (kw) => titleLower.includes(kw.toLowerCase()) || urlLower.includes(kw.toLowerCase()),
   );

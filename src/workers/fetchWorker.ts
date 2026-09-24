@@ -2,7 +2,7 @@ import { Worker, type Job } from 'bullmq';
 import { createLogger } from '../lib/logger.js';
 import { redisConnection, processQueue, QUEUE_NAMES, type FetchJobData, type ProcessJobData } from '../lib/queue.js';
 import { fetchAllSources } from '../modules/fetcher/index.js';
-import { isDuplicate } from '../modules/processor/dedup.js';
+import { isDuplicate, markAsProcessed } from '../modules/processor/dedup.js';
 import { filterArticle } from '../modules/processor/filter.js';
 import { updateDailyStats } from '../modules/analytics/dailyStats.js';
 
@@ -38,6 +38,7 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
     // Hızlı filtre ön kontrolü
     const filterResult = filterArticle(item);
     if (!filterResult.passed) {
+      await markAsProcessed(item.url).catch(() => {});
       skipped++;
       continue;
     }

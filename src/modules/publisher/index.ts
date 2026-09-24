@@ -95,3 +95,6 @@ export async function publishNext(): Promise<boolean> {
     return false;
   }
 }
+
+export { isXManualMode, setXManualMode } from './twitter.js';
+

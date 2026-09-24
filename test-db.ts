@@ -1,6 +1,6 @@
 import { db } from './src/db/index.js';
 import { processedArticles } from './src/db/schema.js';
-import { desc, eq } from 'drizzle-orm';
+import { desc } from 'drizzle-orm';
 
 async function get() {
   const res = await db.select({
@@ -13,3 +13,7 @@ async function get() {
   process.exit(0);
 }
 get();
+
+
+
+

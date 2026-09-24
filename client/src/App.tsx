@@ -71,7 +71,9 @@ export const App: React.FC = () => {
     }
   };
 
-  const pendingArticlesCount = articles.filter((a) => a.status === 'pending').length;
+  const pendingArticlesCount = articles.filter(
+    (a) => a.status === 'pending' || a.status === 'pre_approved',
+  ).length;
 
   return (
     <div className="min-h-screen bg-[#070A11] text-slate-100 flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
@@ -91,7 +93,7 @@ export const App: React.FC = () => {
       />
 
       {/* ─── Main Viewport ─────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+      <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-6">
         {activeTab === 'overview' && (
           <OverviewView
             overview={overview}

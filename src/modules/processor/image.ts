@@ -16,7 +16,7 @@ export type ImageFormat = '16:9' | '4:5' | '9:16';
 // Görsel çıktı klasörü
 const OUTPUT_DIR = './output/images';
 
-import { downloadImage } from './downloader.js';
+import { downloadImage, resolveHighResImage } from './downloader.js';
 
 export interface ImageGenerationResult {
   imagePath: string;
@@ -35,6 +35,8 @@ export async function generateNewsCard(
   articleId: string,
   format: ImageFormat = '16:9',
   imageUrl?: string | null,
+  preloadedBuffer?: Buffer | null,
+  articleUrl?: string | null,
 ): Promise<ImageGenerationResult> {
   // Çıktı klasörünü oluştur
   if (!existsSync(OUTPUT_DIR)) {
@@ -48,9 +50,10 @@ export async function generateNewsCard(
   const imagePath = path.join(OUTPUT_DIR, `${articleId}_${format.replace(':', 'x')}.${ext}`);
   const colors = CATEGORY_COLORS[category];
 
-  let downloadedImageBuffer: Buffer | null = null;
-  if (imageUrl) {
-    downloadedImageBuffer = await downloadImage(imageUrl);
+  let downloadedImageBuffer: Buffer | null = preloadedBuffer ?? null;
+  if (!downloadedImageBuffer && (imageUrl || articleUrl)) {
+    const resolved = await resolveHighResImage(imageUrl, articleUrl);
+    downloadedImageBuffer = resolved.buffer;
   }
 
   // 9:16 Instagram Reels için özel profesyonel kompozisyon
@@ -58,7 +61,7 @@ export async function generateNewsCard(
     if (downloadedImageBuffer) {
       // 1. Ambiyans arka planı (1080x1920 blur + hafif karartma)
       const bgBuffer = await sharp(downloadedImageBuffer)
-        .resize(width, height, { fit: 'cover' })
+        .resize(width, height, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
         .blur(30)
         .modulate({ brightness: 0.45 })
         .toBuffer();
@@ -70,7 +73,8 @@ export async function generateNewsCard(
         `<svg><rect x="0" y="0" width="${fgWidth}" height="${fgHeight}" rx="24" ry="24"/></svg>`
       );
       const fgBuffer = await sharp(downloadedImageBuffer)
-        .resize(fgWidth, fgHeight, { fit: 'cover' })
+        .resize(fgWidth, fgHeight, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
+        .sharpen({ sigma: 0.8, m1: 0.5, m2: 0.5 })
         .composite([{ input: roundedCornerSvg, blend: 'dest-in' }])
         .png()
         .toBuffer();
@@ -105,7 +109,8 @@ export async function generateNewsCard(
   let sharpInstance;
   if (downloadedImageBuffer) {
     sharpInstance = sharp(downloadedImageBuffer)
-      .resize(width, height, { fit: 'cover' })
+      .resize(width, height, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
+      .sharpen({ sigma: 0.8, m1: 0.5, m2: 0.5 })
       .composite([{ input: Buffer.from(overlaySvg), gravity: 'center' }]);
   } else {
     sharpInstance = sharp(Buffer.from(overlaySvg)).resize(width, height);
@@ -124,6 +129,8 @@ export interface DigestSlideParams {
   publishedAt: Date;
   articleId: string;
   imageUrl?: string | null;
+  articleUrl?: string | null;
+  preloadedBuffer?: Buffer | null;
   slideIndex: number;
   totalSlides: number;
   digestType: 'noon' | 'evening' | 'manual';
@@ -142,6 +149,8 @@ export async function generateDigestSlideCard(
     publishedAt,
     articleId,
     imageUrl,
+    articleUrl,
+    preloadedBuffer,
     slideIndex,
     totalSlides,
     digestType,
@@ -159,9 +168,10 @@ export async function generateDigestSlideCard(
   );
 
   const colors = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.general;
-  let downloadedImageBuffer: Buffer | null = null;
-  if (imageUrl) {
-    downloadedImageBuffer = await downloadImage(imageUrl);
+  let downloadedImageBuffer: Buffer | null = preloadedBuffer ?? null;
+  if (!downloadedImageBuffer && (imageUrl || articleUrl)) {
+    const resolved = await resolveHighResImage(imageUrl, articleUrl);
+    downloadedImageBuffer = resolved.buffer;
   }
 
   const badgePrefix =
@@ -174,7 +184,7 @@ export async function generateDigestSlideCard(
 
   if (downloadedImageBuffer) {
     const bgBuffer = await sharp(downloadedImageBuffer)
-      .resize(width, height, { fit: 'cover' })
+      .resize(width, height, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
       .blur(30)
       .modulate({ brightness: 0.45 })
       .toBuffer();
@@ -185,7 +195,8 @@ export async function generateDigestSlideCard(
       `<svg><rect x="0" y="0" width="${fgWidth}" height="${fgHeight}" rx="24" ry="24"/></svg>`,
     );
     const fgBuffer = await sharp(downloadedImageBuffer)
-      .resize(fgWidth, fgHeight, { fit: 'cover' })
+      .resize(fgWidth, fgHeight, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
+      .sharpen({ sigma: 0.8, m1: 0.5, m2: 0.5 })
       .composite([{ input: roundedCornerSvg, blend: 'dest-in' }])
       .png()
       .toBuffer();

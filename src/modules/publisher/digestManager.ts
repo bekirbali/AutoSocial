@@ -7,7 +7,7 @@ import {
   publishedTweets,
   type InstagramDigest,
 } from '../../db/schema.js';
-import { eq, and, desc, inArray, gte } from 'drizzle-orm';
+import { eq, and, desc, inArray, gte, isNotNull } from 'drizzle-orm';
 import { generateDigestSlideCard } from '../processor/image.js';
 import { generateDigestReel } from '../processor/digestGenerator.js';
 import { generateDigestCaption } from '../processor/ai.js';
@@ -22,6 +22,69 @@ import type { ArticleCategory } from '../../config/keywords.js';
 const log = createLogger('publisher:digestManager');
 
 export type DigestType = 'noon' | 'evening' | 'manual';
+
+export interface DigestCutoffInfo {
+  since: Date;
+  description: string;
+  source: 'custom_hours' | 'last_digest' | 'max_lookback_24h' | 'fallback_24h';
+}
+
+/**
+ * Bülten için haber başlangıç zamanını (cutoff time) akıllıca belirler.
+ * Mantık:
+ * 1. Eğer customHours verilmişse -> now - customHours saat.
+ * 2. En son başarıyla yayınlanmış bülten (status = 'published') varsa -> publishedAt zamanı.
+ *    - Güvenlik önlemi (Fail-safe): Eğer son bülten 24 saatten daha eskiyse (örn. bakım/tatil),
+ *      haberlerin bayatlamaması için en fazla 24 saat geriye gider (now - 24h).
+ * 3. Eğer sistemde henüz hiç yayınlanmış bülten yoksa -> now - 24h (ilk kurulum fallback'i).
+ */
+export async function getDigestCutoffTime(customHours?: number): Promise<DigestCutoffInfo> {
+  const now = new Date();
+
+  if (customHours && customHours > 0) {
+    const since = new Date(now.getTime() - customHours * 60 * 60 * 1000);
+    return {
+      since,
+      description: `Son ${customHours} saat (${since.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}'den itibaren)`,
+      source: 'custom_hours',
+    };
+  }
+
+  // Son yayınlanmış bülteni sorgula
+  const [lastPublished] = await db
+    .select({ publishedAt: instagramDigests.publishedAt })
+    .from(instagramDigests)
+    .where(and(eq(instagramDigests.status, 'published'), isNotNull(instagramDigests.publishedAt)))
+    .orderBy(desc(instagramDigests.publishedAt))
+    .limit(1);
+
+  const maxLookbackMs = 24 * 60 * 60 * 1000; // En fazla 24 saat
+  const maxLookbackDate = new Date(now.getTime() - maxLookbackMs);
+
+  if (lastPublished?.publishedAt) {
+    const lastPubDate = new Date(lastPublished.publishedAt);
+    if (lastPubDate > maxLookbackDate) {
+      const timeStr = lastPubDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = lastPubDate.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
+      return {
+        since: lastPubDate,
+        description: `Son bültenden bu yana (${dateStr} ${timeStr})`,
+        source: 'last_digest',
+      };
+    }
+    return {
+      since: maxLookbackDate,
+      description: `Son 24 saat (Önceki bülten 24 saatten eski olduğu için taze haber filtresi devrede)`,
+      source: 'max_lookback_24h',
+    };
+  }
+
+  return {
+    since: maxLookbackDate,
+    description: `Son 24 saat (Henüz yayınlanmış bülten bulunmadığı için)`,
+    source: 'fallback_24h',
+  };
+}
 
 /**
  * Haber için Türkçe vurucu başlığı belirler.
@@ -60,14 +123,11 @@ export function getTurkishHeadline(item: {
  * X'te yayınlanmış ancak henüz bültende yer almamış haberleri toplayıp
  * çoklu slaytlı 9:16 Instagram Reels bülteni oluşturur ve Telegram onayına gönderir.
  */
-export async function createDailyDigest(type: DigestType): Promise<InstagramDigest | null> {
-  log.info({ type }, '📰 Günlük Instagram bülteni oluşturma süreci başladı');
+export async function createDailyDigest(type: DigestType, customHours?: number): Promise<InstagramDigest | null> {
+  const { since, description } = await getDigestCutoffTime(customHours);
+  log.info({ type, since: since.toISOString(), description }, '📰 Günlük Instagram bülteni oluşturma süreci başladı');
 
-  // Bugünün başlangıcı (00:00:00)
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
-  // 1. SADECE BUGÜN X'TE YAYINLANMIŞ (publishedTweets'te kaydı olan)
+  // 1. Belirlenen zamandan bu yana X'TE YAYINLANMIŞ (publishedTweets'te kaydı olan)
   // ve henüz bültende yer almamış haberleri çek:
   const candidates = await db
     .select({
@@ -94,52 +154,94 @@ export async function createDailyDigest(type: DigestType): Promise<InstagramDige
       and(
         eq(processedArticles.status, 'published'),
         eq(processedArticles.includedInDigest, false),
-        gte(publishedTweets.publishedAt, todayStart), // SADECE BUGÜN X'TE YAYINLANANLAR!
+        gte(publishedTweets.publishedAt, since),
       ),
     )
     .orderBy(desc(publishedTweets.publishedAt)) // En son yayınlanandan eskiye
-    .limit(7); // Maksimum 7 haber (ideal 20-30 saniye Reels bülteni)
+    .limit(15); // Aday havuzu
 
   if (candidates.length === 0) {
-    log.info({ type }, 'Bülten için bugün X\'te yayınlanmış yeni haber bulunamadı, bülten atlanıyor.');
+    log.info({ type, description }, 'Bülten için belirtilen aralıkta yeni haber bulunamadı, bülten atlanıyor.');
     return null;
   }
+
+  // 1.1 Redis'ten panelde belirlenen özel bir haber sıralaması var mı kontrol et
+  let orderedCandidates = candidates;
+  try {
+    const { redis } = await import('../../lib/redis.js');
+    const customOrderJson = await redis.get('digest:custom_order');
+    if (customOrderJson) {
+      const customOrderIds: string[] = JSON.parse(customOrderJson);
+      if (Array.isArray(customOrderIds) && customOrderIds.length > 0) {
+        const candidateMap = new Map(candidates.map((c) => [c.id, c]));
+        const sorted: typeof candidates = [];
+
+        // Önce kullanıcının belirlediği sıradaki haberleri ekle
+        for (const id of customOrderIds) {
+          const item = candidateMap.get(id);
+          if (item) {
+            sorted.push(item);
+            candidateMap.delete(id);
+          }
+        }
+
+        // Özel sıralamada yer almayan diğer yeni haberleri tarihe göre arkasına ekle
+        for (const item of candidates) {
+          if (candidateMap.has(item.id)) {
+            sorted.push(item);
+          }
+        }
+
+        orderedCandidates = sorted;
+        log.info(
+          { customOrderCount: customOrderIds.length, finalCount: orderedCandidates.length },
+          'Panelde belirlenen özel haber sıralaması bültene uygulandı',
+        );
+      }
+    }
+  } catch (err: any) {
+    log.warn({ err: err.message }, 'Redis digest:custom_order okunamadı, varsayılan tarih sırası kullanılıyor');
+  }
+
+  // Maksimum 7 haber al
+  orderedCandidates = orderedCandidates.slice(0, 7);
 
   log.info(
     {
       type,
-      count: candidates.length,
-      articles: candidates.map((c) => ({ id: c.id, title: getTurkishHeadline(c), publishedAt: c.tweetPublishedAt })),
+      cutoff: description,
+      count: orderedCandidates.length,
+      articles: orderedCandidates.map((c) => ({ id: c.id, title: getTurkishHeadline(c), publishedAt: c.tweetPublishedAt })),
     },
-    'Bülten için X\'te bugün yayınlanan onaylı haberler seçildi',
+    'Bülten için X\'te onaylanan haberler seçildi',
   );
 
-  const totalSlides = candidates.length;
+  const totalSlides = orderedCandidates.length;
   const slideImages: string[] = [];
 
   // 2. Her haber için numaralandırılmış Türkçe 9:16 kart üret
-  for (let i = 0; i < candidates.length; i++) {
-    const item = candidates[i]!;
+  for (let i = 0; i < orderedCandidates.length; i++) {
+    const item = orderedCandidates[i]!;
     const slideIndex = i + 1;
     const turkishTitle = getTurkishHeadline(item);
 
-    // Eğer RSS'ten görsel gelmemişse sayfanın OpenGraph görselini çek (Fallback)
+    // Yüksek çözünürlüklü görsel çözümü (HD yükseltme veya OpenGraph fallback)
     let slideImageUrl = item.rawImageUrl;
-    if (!slideImageUrl && item.rawUrl) {
-      try {
-        const { extractOpenGraphImage } = await import('../processor/downloader.js');
-        const ogImage = await extractOpenGraphImage(item.rawUrl);
-        if (ogImage) {
-          slideImageUrl = ogImage;
-          await db
-            .update(rawArticles)
-            .set({ imageUrl: ogImage })
-            .where(eq(rawArticles.id, item.rawArticleId))
-            .catch(() => {});
-        }
-      } catch (ogErr: any) {
-        log.warn({ err: ogErr.message, url: item.rawUrl }, 'Bülten için OpenGraph görseli çekilemedi');
+    let slideImageBuffer: Buffer | null = null;
+    try {
+      const { resolveHighResImage } = await import('../processor/downloader.js');
+      const resolved = await resolveHighResImage(slideImageUrl, item.rawUrl);
+      if (resolved.url && resolved.url !== slideImageUrl) {
+        slideImageUrl = resolved.url;
+        await db
+          .update(rawArticles)
+          .set({ imageUrl: resolved.url })
+          .where(eq(rawArticles.id, item.rawArticleId))
+          .catch(() => {});
       }
+      slideImageBuffer = resolved.buffer;
+    } catch (ogErr: any) {
+      log.warn({ err: ogErr.message, url: item.rawUrl }, 'Bülten görseli çözümlenemedi');
     }
 
     try {
@@ -150,6 +252,8 @@ export async function createDailyDigest(type: DigestType): Promise<InstagramDige
         publishedAt: item.rawPublishedAt || item.createdAt,
         articleId: item.id,
         imageUrl: slideImageUrl,
+        articleUrl: item.rawUrl,
+        preloadedBuffer: slideImageBuffer,
         slideIndex,
         totalSlides,
         digestType: type,
@@ -177,7 +281,7 @@ export async function createDailyDigest(type: DigestType): Promise<InstagramDige
 
   // 4. Gemini ile ortak Türkçe Instagram açıklaması (caption) üret
   const caption = await generateDigestCaption(
-    candidates.map((c) => ({
+    orderedCandidates.map((c) => ({
       title: getTurkishHeadline(c),
       category: c.category ?? undefined,
       sourceName: c.sourceName ?? undefined,
@@ -192,7 +296,7 @@ export async function createDailyDigest(type: DigestType): Promise<InstagramDige
     .values({
       id: digestId,
       type,
-      articleIds: candidates.map((c) => c.id),
+      articleIds: orderedCandidates.map((c) => c.id),
       videoPath: outputVideoPath,
       caption,
       status: 'pending',
@@ -207,19 +311,20 @@ export async function createDailyDigest(type: DigestType): Promise<InstagramDige
   await sendDigestApprovalRequest({
     digestId: newDigest.id,
     type,
-    articleCount: candidates.length,
+    articleCount: orderedCandidates.length,
     videoPath: outputVideoPath,
     caption,
+    periodInfo: description,
   });
 
-  log.info({ digestId: newDigest.id, type, count: candidates.length }, '✅ Bülten hazırlandı ve Telegram onayına sunuldu');
+  log.info({ digestId: newDigest.id, type, count: orderedCandidates.length }, '✅ Bülten hazırlandı ve Telegram onayına sunuldu');
   return newDigest;
 }
 
 /**
  * Onaylanan bülteni Instagram'a yayınlar ve kapsanan haberleri işaretler.
  */
-export async function publishDigest(digestId: string): Promise<void> {
+export async function publishDigest(digestId: string): Promise<{ igMediaId: string; igPostUrl: string }> {
   log.info({ digestId }, '🚀 Bülten Instagram yayını başlıyor');
 
   const [digest] = await db
@@ -232,9 +337,12 @@ export async function publishDigest(digestId: string): Promise<void> {
     throw new Error(`Bülten bulunamadı: ${digestId}`);
   }
 
-  if (digest.status === 'published') {
+  if (digest.status === 'published' && digest.igMediaId && digest.igPostUrl) {
     log.info({ digestId }, 'Bülten zaten yayınlanmış, atlanıyor');
-    return;
+    return {
+      igMediaId: digest.igMediaId,
+      igPostUrl: digest.igPostUrl,
+    };
   }
 
   try {
@@ -265,7 +373,14 @@ export async function publishDigest(digestId: string): Promise<void> {
         .where(inArray(processedArticles.id, digest.articleIds));
     }
 
+    // 4. Kullanılan özel sıralama hafızasını temizle
+    try {
+      const { redis } = await import('../../lib/redis.js');
+      await redis.del('digest:custom_order');
+    } catch {}
+
     log.info({ digestId, igMediaId: igResult.igMediaId, igPostUrl: igResult.igPostUrl }, '✅ Bülten Instagram\'da başarıyla yayınlandı');
+    return igResult;
   } catch (error: any) {
     const errMsg = error instanceof Error ? error.message : String(error);
     log.error({ err: errMsg, digestId }, '❌ Bülten Instagram yayını başarısız');
@@ -286,9 +401,29 @@ export async function publishDigest(digestId: string): Promise<void> {
 
 /**
  * Bülteni iptal eder / pas geçer.
+ * Eğer bülten Instagram'da zaten yayınlanmışsa veya bir mediaId varsa iptal edilmesini engeller.
  */
-export async function rejectDigest(digestId: string): Promise<void> {
-  log.info({ digestId }, '❌ Bülten pas geçildi / iptal edildi');
+export async function rejectDigest(digestId: string): Promise<boolean> {
+  log.info({ digestId }, '❌ Bülten pas geçme / iptal talebi alındı');
+
+  const [digest] = await db
+    .select({
+      status: instagramDigests.status,
+      igMediaId: instagramDigests.igMediaId,
+    })
+    .from(instagramDigests)
+    .where(eq(instagramDigests.id, digestId))
+    .limit(1);
+
+  if (!digest) {
+    log.warn({ digestId }, 'İptal edilecek bülten bulunamadı');
+    return false;
+  }
+
+  if (digest.status === 'published' || digest.igMediaId) {
+    log.warn({ digestId }, '⚠️ Bülten zaten Instagram\'da yayınlanmış olduğu için iptal edilemez!');
+    return false;
+  }
 
   await db
     .update(instagramDigests)
@@ -297,4 +432,6 @@ export async function rejectDigest(digestId: string): Promise<void> {
       updatedAt: new Date(),
     })
     .where(eq(instagramDigests.id, digestId));
+
+  return true;
 }

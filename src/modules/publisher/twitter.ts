@@ -3,8 +3,39 @@ import { env } from '../../config/env.js';
 import { createLogger } from '../../lib/logger.js';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import { redis } from '../../lib/redis.js';
 
 const log = createLogger('publisher:twitter');
+
+/**
+ * X Manuel Modunun aktif olup olmadığını Redis (ve fallback env) üzerinden kontrol eder.
+ * Manuel Mod aktifken:
+ * - X API'ye tweet atma isteği yapılmaz (0 TL maliyet)
+ * - X API metrik okuma (Read) istekleri yapılmaz
+ * - Yerel DB'de haber onaylanıp yayınlandı kabul edilir, böylece Instagram Reels bültenleri aksamaz.
+ */
+export async function isXManualMode(): Promise<boolean> {
+  try {
+    const val = await redis.get('setting:x_manual_mode');
+    if (val !== null) {
+      return val === 'true';
+    }
+  } catch {
+    // Redis hatası durumunda env fallback
+  }
+  return env.X_MANUAL_MODE ?? false;
+}
+
+/**
+ * X Manuel Modunu Redis üzerinden dinamik olarak açar veya kapatır.
+ */
+export async function setXManualMode(enabled: boolean): Promise<void> {
+  await redis.set('setting:x_manual_mode', enabled ? 'true' : 'false');
+  log.info(
+    { enabled },
+    `X (Twitter) yayınlama modu güncellendi: ${enabled ? '🖐 MANUEL MOD (X API Pasif - 0 TL)' : '⚡ OTOMATİK MOD (X API Aktif)'}`,
+  );
+}
 
 // OAuth 1.0a ile kimlik doğrulama (tweet atma için zorunlu)
 export const twitterClient = new TwitterApi({
@@ -21,6 +52,7 @@ export interface TweetPostResult {
   tweetId: string;
   tweetUrl: string;
 }
+
 
 /**
  * Tweet at + isteğe bağlı görsel ekle
@@ -105,17 +137,60 @@ export async function checkRateLimit(): Promise<{
 }
 
 /**
+ * Tweet metninin X (Twitter) ağırlıklı karakter uzunluğunu hesaplar.
+ * Standart Latin karakterler 1, emojiler/CJK/semboller 2 ağırlık sayılır.
+ */
+export function getTwitterWeightedLength(text: string): number {
+  let weight = 0;
+  const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+  for (const { segment } of segmenter.segment(text)) {
+    const codePoint = segment.codePointAt(0) ?? 0;
+    // Emojiler, semboller ve karmaşık karakterler Twitter'da 2 birim ağırlık tutar
+    if (codePoint > 0x2000 || segment.length > 1) {
+      weight += 2;
+    } else {
+      weight += 1;
+    }
+  }
+  return weight;
+}
+
+/**
+ * Tweet metnini Twitter'ın ağırlıklı limitine uygun şekilde güvenli kırpar.
+ * Emojileri ve kelime bütünlüğünü korur.
+ */
+export function truncateToTwitterLimit(text: string, maxWeight: number = 265): string {
+  if (getTwitterWeightedLength(text) <= maxWeight) return text;
+
+  const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+  let result = '';
+  let currentWeight = 0;
+  const targetWeight = maxWeight - 3; // '...' için pay
+
+  for (const { segment } of segmenter.segment(text)) {
+    const codePoint = segment.codePointAt(0) ?? 0;
+    const segWeight = (codePoint > 0x2000 || segment.length > 1) ? 2 : 1;
+    if (currentWeight + segWeight > targetWeight) break;
+    result += segment;
+    currentWeight += segWeight;
+  }
+
+  // Kelime ortasında kesilmesini önlemek için son boşluğa kadar geri çek
+  const lastSpace = result.lastIndexOf(' ');
+  if (lastSpace > 100) {
+    result = result.substring(0, lastSpace);
+  }
+
+  return `${result.trimEnd()}...`;
+}
+
+/**
  * Tweet metni + hashtag birleştir, karakter limitini kontrol et
  */
-function buildTweetText(text: string, hashtags: string[]): string {
+export function buildTweetText(text: string, hashtags: string[]): string {
   const hashtagStr = hashtags.join(' ');
   const combined = hashtagStr ? `${text}\n\n${hashtagStr}` : text;
 
-  // Twitter limiti 280 karakter (biz 240 + hashtaglar için pay bıraktık)
-  if (combined.length > 280) {
-    const truncated = text.substring(0, 280 - hashtagStr.length - 4) + '... ';
-    return `${truncated}\n\n${hashtagStr}`;
-  }
-
-  return combined;
+  // Güvenli Twitter ağırlıklı limit: 265 karakter (280 sınırına karşı 15 birim emojili marj)
+  return truncateToTwitterLimit(combined, 265);
 }

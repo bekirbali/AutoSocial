@@ -47,7 +47,10 @@ yayın yapan bir otomasyon sistemidir.
 - **Kritik Amaç:** Reddit, projede sıradan bir kaynak değil; teknoloji, robotik (örn: mağazada müşteriye tepki veren robotlar, fabrika kazaları), yapay zeka demoları, şaşırtıcı donanım/cihazlar ve sıra dışı inovasyon anlarını içeren videoları henüz patlama safhasındayken (early-stage) yakalayıp X ve Instagram'da ilk paylaşarak viral organik trafik toplama aracıdır.
 - **Hedef Subreddit Havuzu:** `r/robotics`, `r/singularity`, `r/technology`, `r/gadgets`, `r/EngineeringPorn`, `r/Damnthatsinteresting`, `r/Futurology` ve teknolojik viral anlar.
 - **Keşif Mantığı:** "Hot" yerine özellikle "Rising" (yükselenler) veya saatlik ivmeli gönderiler taranarak, henüz diğer sosyal medya hesapları fark etmeden yakalanır.
-- **API Durumu:** `reddit.com/prefs/apps` üzerinden script oluşturabilmek için de resmi API başvurusu yapılıp onay alınması gerekmektedir (şu ana kadar 2 kez başvuru yapılmış ve ikisinde de ret alınmıştır; başvuru süreçleri veya alternatif yollar buna göre ele alınmalıdır).
+- **API ve Public JSON Durumu:** 
+  - Resmi API başvurusu 2 kez yapılmış ve ikisinde de ret alınmıştır.
+  - Public JSON (`.json`) ve RSS (`.rss`) üzerinden API'sız veri çekme denemelerinde Reddit'in agresif Cloudflare/DataDome bot koruması devreye girmekte; 1-2 istek sonrasında doğrudan `403 Forbidden` ve `429 Too Many Requests` yanıtları dönerek IP engellenmektedir. Bulut sunucularında (Railway, Docker vb.) bu engelleme ilk istekte gerçekleşir.
+  - Bu nedenle Reddit'ten public JSON veya scraping ile veri çekme gibi "alternatif yollar" KESİNLİKLE ÇALIŞMAMAKTADIR ve bir daha asla önerilmemelidir.
 - **İşleme Akışı:** Video kaynağı `mediaDownloader.ts` (yt-dlp) ile indirilir, Gemini ile vurucu Türkçe tweet ve Instagram açıklaması üretilir, Telegram onayı üzerinden onaylanıp doğrudan video olarak yayınlanır.
 
 ### Tünel Çözümü (Instagram Graph API İçin)
@@ -65,6 +68,16 @@ yayın yapan bir otomasyon sistemidir.
 - Veritabanı: PostgreSQL (Drizzle ORM) + Redis
 - Kuyruk: BullMQ (Retry mekanizması: attempts: 3)
 - **Mükerrer Paylaşım Koruması:** BullMQ retry mekanizmasının X ve Instagram'da aynı içeriği defalarca paylaşmaması için `publishWorker` içinde idempotency mantığı kuruldu (DB üzerinden kontrol yapılıyor).
+
+### X (Twitter) Manuel Tasarruf Modu (Admin Panel & Redis)
+- **Amaç:** X Developer API bakiyesi bittiğinde veya tasarruf edilmek istendiğinde 0 TL harcama ile sistemi çalıştırabilmek.
+- **Yönetim:** Admin Paneli Header'ındaki toggle butonu veya Ayarlar sayfasından tek tıkla açılıp kapatılır. Durum Redis `setting:x_manual_mode` üzerinde anlık tutulur.
+- **İşleyiş:** 
+  - Manuel mod açıkken `publishWorker` X API'ye gitmez (0 API çağrısı, 0 TL maliyet). Haberi veritabanında 'yayınlandı' (`manual-<timestamp>` dummy tweet ID ile) olarak kaydeder.
+  - Analytics cron'u X Read isteklerini tamamen atlar (bakiyeden okuma düşmez).
+  - Kullanıcı Telegram veya Paneldeki içerik ve görseli kopyalayıp X hesabına elle paylaşır.
+  - Saat 13:00 ve 19:00 Instagram Reels Günlük Bültenleri (`digestManager.ts`), onaylanan bu haberleri otomatik toplayıp Reels sentezlemeye ve Meta Graph API üzerinden Instagram'a yayınlamaya kesintisiz devam eder.
+
 
 ## .env Durumu
 Şu anda `.env` dosyasında başarıyla kurulan anahtarlar:

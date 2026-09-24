@@ -9,7 +9,7 @@ const log = createLogger('processor:ai');
 // Gemini istemcisi — modüle yüklendiğinde bir kez başlatılır
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
 export interface TweetGenerationResult {
   tweetText: string;
@@ -311,12 +311,13 @@ BÜLTENDE YER ALAN HABERLER:
 ${articlesListText}
 
 KURALLAR:
-1. Başlangıç: Vurucu bir başlık (örn: "⚡️ DonanımPost ${bultenAd}" veya "📌 Günün Öne Çıkan Teknoloji Haberleri").
-2. Maddeler: Bültendeki her haberi numaralandırılmış emojiyle (1️⃣, 2️⃣, 3️⃣...) 1'er satırlık net, merak uyandıran ve hap bir Türkçe cümleyle özetle.
-3. Etkileşim Çağrısı (CTA): Okuyuculara samimi bir soru sor (örn: "💬 Sizin günün en çok dikkatinizi çeken haberi hangisi oldu? Yorumlarda buluşalım!").
+1. Başlangıç: Vurucu bir başlık (örn: "⚡️ DonanımPost ${bultenAd}" veya "DonanımPost ile Günün Teknoloji Özeti").
+2. Maddeler: Bültendeki her haberi numaralandırılmış emojiyle (1️⃣, 2️⃣, 3️⃣...) açıkla ve netleştir. İzleyiciler başlığı zaten video slaytında gördüğü için, bu açıklama metninde haberin ne anlama geldiğini, perde arkasını ve önemli teknik detayını aktaran bilgilendirici ve doyurucu 1-2 cümle yaz.
+3. Etkileşim Çağrısı (CTA): Okuyuculara konuyla ilgili samimi bir soru sor (örn: "💬 Sizin günün en çok dikkatinizi çeken gelişmesi hangisi oldu? Yorumlarda buluşalım!").
 4. Marka ve Takip Daveti: DonanımPost'u takip etmeye davet et.
-5. Hashtag: 5-8 adet en popüler teknoloji etiketi ekle (#donanım #teknoloji #pc #ekrankartı #oyun #reels vb.).
+5. Hashtag: 5-8 adet en popüler teknoloji etiketi ekle (#donanımpost #donanım #teknoloji #ekrankartı #oyun #reels vb. Marka etiketi kesinlikle #donanımpost olmalıdır, "u" harfiyle #donanumpost yazma).
 6. "AutoSocial" kelimesini ASLA kullanma; marka adı kesinlikle "DonanımPost"tur.
+7. Uzunluk Limiti: Instagram'ın maksimum açıklama limiti 2.200 karakterdir. Tüm metin (başlık, 7 haberin detayları, CTA ve etiketler dahil) KESİNLİKLE 1.700 ile 2.050 karakter arasında olmalıdır, 2.100 karakteri ASLA geçmemelidir.
 
 ÇIKTI FORMATI:
 Sadece aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
@@ -334,17 +335,17 @@ Sadece aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
       const parsed = JSON.parse(jsonMatch[0]);
       if (parsed.caption) {
         log.info({ digestType, articleCount: articles.length }, 'Bülten Instagram caption üretildi');
-        return parsed.caption;
+        return parsed.caption.replace(/#donanumpost\b/gi, '#donanımpost');
       }
     }
 
     // JSON parse edilemezse doğrudan metni temizle ve döndür
-    return responseText.replace(/```json|```/g, '').trim();
+    return responseText.replace(/```json|```/g, '').replace(/#donanumpost\b/gi, '#donanımpost').trim();
   } catch (err: any) {
     log.error({ err: err.message }, 'Gemini bülten caption üretimi başarısız, şablon fallback kullanılıyor');
     // Fallback caption
     const bullets = articles.map((a, i) => `${i + 1}️⃣ ${a.title}`).join('\n');
-    return `⚡️ DonanımPost ${bultenAd}\n\n${bullets}\n\n💬 Günün en çok dikkatinizi çeken haberi hangisi oldu? Yorumlarda konuşalım!\n\n#donanım #teknoloji #donanumpost #reels`;
+    return `⚡️ DonanımPost ${bultenAd}\n\n${bullets}\n\n💬 Günün en çok dikkatinizi çeken haberi hangisi oldu? Yorumlarda konuşalım!\n\n#donanım #teknoloji #donanımpost #reels`;
   }
 }
 

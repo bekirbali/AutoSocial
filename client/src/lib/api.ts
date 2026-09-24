@@ -26,7 +26,7 @@ export async function fetchArticles(status?: string): Promise<ArticleItem[]> {
 
 export async function postArticleAction(
   id: string,
-  action: 'publish_now' | 'schedule' | 'reject' | 'update',
+  action: 'publish_now' | 'schedule' | 'reject' | 'update' | 'pre_approve' | 'un_pre_approve',
   payload?: { tweetText?: string; translatedTitle?: string; reason?: string },
 ): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_BASE}/articles/${id}/action`, {
@@ -74,12 +74,30 @@ export async function composeDigest(
   return json.data;
 }
 
+export async function saveDigestOrder(articleIds: string[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/digest/order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ articleIds }),
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Sıralama kaydedilemedi');
+}
+
 export async function publishDigestToInstagram(digestId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/digest/${digestId}/publish`, {
     method: 'POST',
   });
   const json = await res.json();
   if (!json.success) throw new Error(json.error || 'Instagram yayını başarısız');
+}
+
+export async function sendDigestToTelegram(digestId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/digest/${digestId}/send-telegram`, {
+    method: 'POST',
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Telegram\'a gönderilemedi');
 }
 
 export async function fetchQueues(): Promise<{
@@ -122,6 +140,7 @@ export async function fetchSettings(): Promise<{
   sources: SourceItem[];
   categories: string[];
   keywords: Record<string, string[]>;
+  xManualMode?: boolean;
   env: any;
 }> {
   const res = await fetch(`${API_BASE}/settings`);
@@ -129,3 +148,15 @@ export async function fetchSettings(): Promise<{
   if (!json.success) throw new Error(json.error || 'Ayarlar yüklenemedi');
   return json.data;
 }
+
+export async function toggleXManualMode(enabled: boolean): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/settings/x-manual-mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'X Manuel Mod ayarı güncellenemedi');
+  return json.xManualMode;
+}
+

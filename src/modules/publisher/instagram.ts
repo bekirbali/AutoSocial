@@ -88,7 +88,20 @@ export async function postToInstagram(
     : `${publicAppUrl.replace(/\/$/, '')}/images/${fileName}`;
 
   const hashtagStr = hashtags.join(' ');
-  const fullCaption = hashtagStr ? `${caption}\n\n${hashtagStr}` : caption;
+  const rawCaption = hashtagStr ? `${caption}\n\n${hashtagStr}` : caption;
+  let fullCaption = rawCaption.replace(/#donanumpost\b/gi, '#donanımpost').trim();
+
+  // Instagram Graph API maksimum 2200 karakter kabul eder; aşarsa "The caption was too long" hatası döner
+  const MAX_IG_CAPTION_LEN = 2190;
+  if (fullCaption.length > MAX_IG_CAPTION_LEN) {
+    log.warn(
+      { originalLen: fullCaption.length, max: MAX_IG_CAPTION_LEN },
+      'Caption Instagram 2200 karakter sınırını aştı, güvenli sınıra kırpılıyor',
+    );
+    const trimmed = fullCaption.substring(0, MAX_IG_CAPTION_LEN - 5);
+    const lastNewline = trimmed.lastIndexOf('\n');
+    fullCaption = (lastNewline > 1800 ? trimmed.substring(0, lastNewline) : trimmed) + '...';
+  }
 
   log.info({ mediaUrl, isVideo, captionLength: fullCaption.length }, "Instagram'a gönderiliyor");
 

@@ -1,10 +1,12 @@
 import React from 'react';
 import {
   Clock,
+
   CheckCircle2,
   Cpu,
   Zap,
   TrendingUp,
+  Hand,
 } from 'lucide-react';
 import type { OverviewResponse } from '../types/api';
 
@@ -36,8 +38,34 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* ─── Manuel X Modu Bilgilendirme Bannerı ────────────────────────────── */}
+      {system.xManualMode && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-200 shadow-lg shadow-amber-500/5">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+              <Hand className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-white flex items-center gap-2">
+                🖐 X (Twitter) Manuel Tasarruf Modu Aktif (0 TL Maliyet)
+              </div>
+              <p className="text-xs text-amber-200/80 mt-0.5">
+                X API çağrıları durduruldu. Tweetleri Telegram'dan veya panodan kopyalayıp elle paylaşabilirsiniz. Onaylanan haberler saat 13:00 ve 19:00 Instagram bültenlerine eksiksiz aktarılır.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigateTab('settings')}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-xs font-semibold text-amber-300 transition cursor-pointer whitespace-nowrap self-end sm:self-center"
+          >
+            Modu Yönet
+          </button>
+        </div>
+      )}
+
       {/* ─── 1. KPI Metric Cards ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
         {/* Today Published */}
         <div className="glass-card p-5 rounded-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>

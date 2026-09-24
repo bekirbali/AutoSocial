@@ -6,8 +6,10 @@ import { getTodayPublishedCount } from '../../modules/publisher/scheduler.js';
 import { fetchQueue, publishQueue, analyticsQueue } from '../../lib/queue.js';
 import { env } from '../../config/env.js';
 import { createLogger } from '../../lib/logger.js';
+import { isXManualMode } from '../../modules/publisher/twitter.js';
 
 const log = createLogger('server:routes:overview');
+
 export const overviewRouter: Router = Router();
 
 overviewRouter.get('/', async (_req, res) => {
@@ -26,9 +28,19 @@ overviewRouter.get('/', async (_req, res) => {
       .where(eq(processedArticles.status, 'pending'));
     const pendingCount = Number(pendingRow?.count ?? 0);
 
-    // 3. Kuyrukta bekleyenler (Delayed / Scheduled)
-    const delayedJobs = await publishQueue.getDelayed();
-    const scheduledCount = delayedJobs.length;
+    // 2.1. Ön onaydaki makaleler (Pre-approved)
+    const [preApprovedRow] = await db
+      .select({ count: count() })
+      .from(processedArticles)
+      .where(eq(processedArticles.status, 'pre_approved'));
+    const preApprovedCount = Number(preApprovedRow?.count ?? 0);
+
+    // 3. Zamanlanmış makaleler (Approved / Scheduled)
+    const [scheduledRow] = await db
+      .select({ count: count() })
+      .from(processedArticles)
+      .where(eq(processedArticles.status, 'approved'));
+    const scheduledCount = Number(scheduledRow?.count ?? 0);
 
     // 4. Bugün X'e atılan tweetler
     const [publishedTodayRow] = await db
@@ -60,6 +72,7 @@ overviewRouter.get('/', async (_req, res) => {
           maxTweets,
           quotaRemaining: Math.max(0, maxTweets - todayPublished),
           pendingCount,
+          preApprovedCount,
           scheduledCount,
           publishedTodayCount,
         },
@@ -74,7 +87,9 @@ overviewRouter.get('/', async (_req, res) => {
           publicUrl: env.APP_PUBLIC_URL || 'http://localhost:3000',
           stats: todayStat ?? null,
           serverTime: new Date().toISOString(),
+          xManualMode: await isXManualMode(),
         },
+
       },
     });
   } catch (error: any) {

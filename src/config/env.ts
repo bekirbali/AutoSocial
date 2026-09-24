@@ -21,6 +21,7 @@ const EnvSchema = z.object({
   X_BEARER_TOKEN: z.string().min(1, 'X_BEARER_TOKEN gerekli'),
   X_CLIENT_ID: z.string().optional(),
   X_CLIENT_SECRET: z.string().optional(),
+  X_MANUAL_MODE: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
 
   // Gemini AI
   GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY gerekli'),

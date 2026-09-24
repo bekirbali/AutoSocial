@@ -3,6 +3,7 @@ export interface KpiData {
   maxTweets: number;
   quotaRemaining: number;
   pendingCount: number;
+  preApprovedCount?: number;
   scheduledCount: number;
   publishedTodayCount: number;
 }
@@ -21,6 +22,8 @@ export interface SystemData {
   enableInstagram: boolean;
   publicUrl: string;
   serverTime: string;
+  xManualMode?: boolean;
+
   stats?: {
     articlesFetched: number;
     articlesProcessed: number;
@@ -45,7 +48,7 @@ export interface ArticleItem {
   tweetText: string;
   translatedTitle: string;
   category: string;
-  status: 'pending' | 'approved' | 'published' | 'rejected' | 'failed';
+  status: 'pending' | 'pre_approved' | 'approved' | 'published' | 'rejected' | 'failed';
   imagePath: string | null;
   videoPath: string | null;
   cardImageUrl: string | null;

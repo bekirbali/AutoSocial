@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../../db/index.js';
 import { processedArticles, rawArticles, sources, publishedTweets } from '../../db/schema.js';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
-import { publishQueue, type PublishJobData } from '../../lib/queue.js';
+import { publishQueue, removePendingPublishJobs, type PublishJobData } from '../../lib/queue.js';
 import { getNextPublishSlot } from '../../scheduler/cron.js';
 import { generateNewsCard } from '../../modules/processor/image.js';
 import { syncArticleStatusToTelegram } from '../../modules/telegram/bot.js';
@@ -138,10 +138,7 @@ articlesRouter.post('/:id/action', async (req, res): Promise<void> => {
       };
 
       // Varsa eski job'ı kaldır (BullMQ aynı ID'li tamamlanmış/hatalı işi sessizce yutmasın)
-      const existingJob = await publishQueue.getJob(`publish-${id}`);
-      if (existingJob) {
-        await existingJob.remove().catch(() => {});
-      }
+      await removePendingPublishJobs(id);
 
       await publishQueue.add(`publish:${id}`, jobData, {
         delay: 0,
@@ -172,10 +169,7 @@ articlesRouter.post('/:id/action', async (req, res): Promise<void> => {
       };
 
       // Varsa eski job'ı kaldır
-      const existingJob = await publishQueue.getJob(`publish-${id}`);
-      if (existingJob) {
-        await existingJob.remove().catch(() => {});
-      }
+      await removePendingPublishJobs(id);
 
       await publishQueue.add(`publish:${id}`, jobData, {
         delay: delayMs,
@@ -206,10 +200,7 @@ articlesRouter.post('/:id/action', async (req, res): Promise<void> => {
         .where(eq(processedArticles.id, id));
 
       // Kuyrukta bekleyen delayed iş varsa iptal et
-      const existingJob = await publishQueue.getJob(`publish-${id}`);
-      if (existingJob) {
-        await existingJob.remove().catch(() => {});
-      }
+      await removePendingPublishJobs(id);
 
       // Telegram onay mesajını senkronize et
       syncArticleStatusToTelegram(id, 'rejected').catch(() => {});
@@ -235,6 +226,32 @@ articlesRouter.post('/:id/action', async (req, res): Promise<void> => {
 
       log.info({ articleId: id }, 'Makale metinleri güncellendi');
       res.json({ success: true, message: 'Makale başarıyla güncellendi' });
+      return;
+    }
+
+    if (action === 'pre_approve') {
+      // 5. Ön Onaya Al
+      await db
+        .update(processedArticles)
+        .set({ status: 'pre_approved', updatedAt: new Date() })
+        .where(eq(processedArticles.id, id));
+
+      log.info({ articleId: id }, 'Makale ön onaya alındı');
+      res.json({ success: true, message: 'Makale ön onaya alındı' });
+      return;
+    }
+
+    if (action === 'un_pre_approve') {
+      // 6. Ön Onaydan Çıkar (Onay Bekleyenler'e Geri Al)
+      await db
+        .update(processedArticles)
+        .set({ status: 'pending', updatedAt: new Date() })
+        .where(eq(processedArticles.id, id));
+
+      await removePendingPublishJobs(id);
+
+      log.info({ articleId: id }, 'Makale tekrar onay bekleyenlere taşındı');
+      res.json({ success: true, message: 'Makale onay bekleyenlere geri alındı' });
       return;
     }
 

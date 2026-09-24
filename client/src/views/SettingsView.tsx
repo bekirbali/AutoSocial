@@ -9,18 +9,23 @@ import {
   ExternalLink,
   Server,
   Terminal,
+  Zap,
+  Hand,
+  Loader2,
 } from 'lucide-react';
 import type { SourceItem } from '../types/api';
-import { fetchSettings } from '../lib/api';
+import { fetchSettings, toggleXManualMode } from '../lib/api';
 
 export const SettingsView: React.FC = () => {
   const [data, setData] = useState<{
     sources: SourceItem[];
     categories: string[];
     keywords: Record<string, string[]>;
+    xManualMode?: boolean;
     env: any;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   useEffect(() => {
@@ -40,6 +45,21 @@ export const SettingsView: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const handleToggleManualMode = async () => {
+    if (!data) return;
+    const nextState = !data.xManualMode;
+    setIsUpdatingMode(true);
+    try {
+      await toggleXManualMode(nextState);
+      setData({ ...data, xManualMode: nextState });
+    } catch (err: any) {
+      alert(`X yayınlama modu güncellenemedi: ${err.message}`);
+    } finally {
+      setIsUpdatingMode(false);
+    }
+  };
+
 
   if (isLoading || !data) {
     return (
@@ -67,8 +87,74 @@ export const SettingsView: React.FC = () => {
         </p>
       </div>
 
+      {/* ─── X API / Manuel Mod Yönetimi ────────────────────────────────────── */}
+
+      <div className={`glass-card p-6 rounded-2xl border transition-all ${
+        data.xManualMode ? 'border-amber-500/40 bg-amber-950/20' : 'border-cyan-500/30 bg-cyan-950/10'
+      }`}>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className={`p-3 rounded-xl shrink-0 ${
+              data.xManualMode ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40' : 'bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-500/40'
+            }`}>
+              {data.xManualMode ? <Hand className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white font-['Outfit'] m-0">
+                  X (Twitter) Yayınlama Modu
+                </h2>
+                <span className={`px-2.5 py-0.5 text-[11px] font-bold rounded-full uppercase tracking-wider ${
+                  data.xManualMode
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                }`}>
+                  {data.xManualMode ? '🖐 Manuel Mod (0 TL / Tasarruf)' : '⚡ Otomatik API Aktif'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-3xl leading-relaxed">
+                {data.xManualMode ? (
+                  <>
+                    <b className="text-amber-300">X API istekleri tamamen durduruldu.</b> Tweet metni ve görselini Telegram'dan veya kokpitten alıp X hesabına elle atabilirsiniz. Onaylanan haberler <b>13:00 ve 19:00 Instagram Reels bültenlerine eksiksiz dahil edilir</b> ve Instagram'a otomatik yüklenir.
+                  </>
+                ) : (
+                  <>
+                    Onaylanan tweetler ve görseller X Developer API v2 aracılığıyla otomatik paylaşılır. Bütçeniz bittiğinde veya tasarruf etmek istediğinizde tek tıkla <b className="text-amber-300">Manuel Moda</b> geçebilirsiniz.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleToggleManualMode}
+            disabled={isUpdatingMode}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
+              data.xManualMode
+                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700'
+            }`}
+          >
+            {isUpdatingMode ? (
+              <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+            ) : data.xManualMode ? (
+              <>
+                <Zap className="w-4 h-4" />
+                <span>Otomatik API Moduna Geç</span>
+              </>
+            ) : (
+              <>
+                <Hand className="w-4 h-4 text-amber-400" />
+                <span>Manuel Moda Geç (0 TL)</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
       {/* ─── 1. Brand & Architectural Invariants ────────────────────────────── */}
       <div className="glass-card p-6 rounded-2xl space-y-4">
+
         <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
           <Shield className="w-4 h-4 text-emerald-400" />
           Marka ve Mimari Değişmezler (Invariants)

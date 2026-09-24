@@ -8,7 +8,7 @@ import {
   instagramDigests,
 } from '../../db/schema.js';
 import { eq, and, desc, gte, inArray } from 'drizzle-orm';
-import { getTurkishHeadline, publishDigest } from '../../modules/publisher/digestManager.js';
+import { getTurkishHeadline, publishDigest, getDigestCutoffTime } from '../../modules/publisher/digestManager.js';
 import { generateDigestSlideCard } from '../../modules/processor/image.js';
 import type { ArticleCategory } from '../../config/keywords.js';
 import { generateDigestReel } from '../../modules/processor/digestGenerator.js';
@@ -22,11 +22,11 @@ import { createLogger } from '../../lib/logger.js';
 const log = createLogger('server:routes:digest');
 export const digestRouter: Router = Router();
 
-// ─── 1. Bülten Adaylarını Getir (Bugün X'te Yayınlanmış Olanlar) ─────────────
-digestRouter.get('/candidates', async (_req, res) => {
+// ─── 1. Bülten Adaylarını Getir (Akıllı Zaman Filtresi) ──────────────────────
+digestRouter.get('/candidates', async (req, res) => {
   try {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const hoursParam = req.query.hours ? parseFloat(String(req.query.hours)) : undefined;
+    const { since, description, source } = await getDigestCutoffTime(hoursParam);
 
     const candidates = await db
       .select({
@@ -54,21 +54,80 @@ digestRouter.get('/candidates', async (_req, res) => {
         and(
           eq(processedArticles.status, 'published'),
           eq(processedArticles.includedInDigest, false),
-          gte(publishedTweets.publishedAt, todayStart),
+          gte(publishedTweets.publishedAt, since),
         ),
       )
       .orderBy(desc(publishedTweets.publishedAt))
-      .limit(7);
+      .limit(15);
 
     const formatted = candidates.map((c) => ({
       ...c,
       displayTitle: getTurkishHeadline(c),
     }));
 
-    res.json({ success: true, data: formatted });
+    // Redis'te panelden kaydedilmiş özel sıralama var mı kontrol et
+    let orderedFormatted = formatted;
+    try {
+      const { redis } = await import('../../lib/redis.js');
+      const customOrderJson = await redis.get('digest:custom_order');
+      if (customOrderJson) {
+        const customOrderIds: string[] = JSON.parse(customOrderJson);
+        if (Array.isArray(customOrderIds) && customOrderIds.length > 0) {
+          const candidateMap = new Map(formatted.map((c) => [c.id, c]));
+          const sorted: typeof formatted = [];
+
+          for (const id of customOrderIds) {
+            const item = candidateMap.get(id);
+            if (item) {
+              sorted.push(item);
+              candidateMap.delete(id);
+            }
+          }
+
+          for (const item of formatted) {
+            if (candidateMap.has(item.id)) {
+              sorted.push(item);
+            }
+          }
+
+          orderedFormatted = sorted;
+        }
+      }
+    } catch (redisErr: any) {
+      log.warn({ err: redisErr.message }, 'Adaylar sıralanırken Redis okunamadı');
+    }
+
+    res.json({
+      success: true,
+      cutoff: {
+        since: since.toISOString(),
+        description,
+        source,
+      },
+      data: orderedFormatted,
+    });
   } catch (error: any) {
     log.error({ err: error.message }, 'Bülten adayları getirilemedi');
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─── 1.1 Panelden Belirlenen Haber Sıralamasını Kaydet ─────────────────────────
+digestRouter.post('/order', async (req, res): Promise<void> => {
+  const { articleIds } = req.body;
+  if (!articleIds || !Array.isArray(articleIds)) {
+    res.status(400).json({ success: false, error: 'Geçersiz articleIds listesi' });
+    return;
+  }
+
+  try {
+    const { redis } = await import('../../lib/redis.js');
+    await redis.set('digest:custom_order', JSON.stringify(articleIds), 'EX', 7 * 86400);
+    log.info({ count: articleIds.length }, 'Bülten aday sıralaması Redis\'e kaydedildi');
+    res.json({ success: true, message: 'Sıralama başarıyla kaydedildi' });
+  } catch (err: any) {
+    log.error({ err: err.message }, 'Bülten sıralaması kaydedilemedi');
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -130,23 +189,23 @@ digestRouter.post('/compose', async (req, res): Promise<void> => {
       const slideIndex = i + 1;
       const turkishTitle = getTurkishHeadline(item);
 
-      // OpenGraph fallback
+      // Yüksek çözünürlüklü görsel çözümü (HD yükseltme veya OpenGraph fallback)
       let slideImageUrl = item.rawImageUrl;
-      if (!slideImageUrl && item.rawUrl) {
-        try {
-          const { extractOpenGraphImage } = await import('../../modules/processor/downloader.js');
-          const ogImage = await extractOpenGraphImage(item.rawUrl);
-          if (ogImage) {
-            slideImageUrl = ogImage;
-            await db
-              .update(rawArticles)
-              .set({ imageUrl: ogImage })
-              .where(eq(rawArticles.id, item.rawArticleId))
-              .catch(() => {});
-          }
-        } catch {
-          // fallback sessizce atla
+      let slideImageBuffer: Buffer | null = null;
+      try {
+        const { resolveHighResImage } = await import('../../modules/processor/downloader.js');
+        const resolved = await resolveHighResImage(slideImageUrl, item.rawUrl);
+        if (resolved.url && resolved.url !== slideImageUrl) {
+          slideImageUrl = resolved.url;
+          await db
+            .update(rawArticles)
+            .set({ imageUrl: resolved.url })
+            .where(eq(rawArticles.id, item.rawArticleId))
+            .catch(() => {});
         }
+        slideImageBuffer = resolved.buffer;
+      } catch {
+        // fallback sessizce atla
       }
 
       const cardPath = await generateDigestSlideCard({
@@ -156,6 +215,8 @@ digestRouter.post('/compose', async (req, res): Promise<void> => {
         publishedAt: item.rawPublishedAt || item.createdAt,
         articleId: item.id,
         imageUrl: slideImageUrl,
+        articleUrl: item.rawUrl,
+        preloadedBuffer: slideImageBuffer,
         slideIndex,
         totalSlides,
         digestType,
@@ -199,6 +260,12 @@ digestRouter.post('/compose', async (req, res): Promise<void> => {
       })
       .returning();
 
+    // Seçilen haber sıralamasını Redis'e de işle
+    try {
+      const { redis } = await import('../../lib/redis.js');
+      await redis.set('digest:custom_order', JSON.stringify(orderedArticles.map((c) => c.id)), 'EX', 7 * 86400);
+    } catch {}
+
     const videoFileName = path.basename(outputVideoPath);
     res.json({
       success: true,
@@ -217,12 +284,54 @@ digestRouter.post('/compose', async (req, res): Promise<void> => {
   }
 });
 
+// ─── 2.1 Derlenmiş Bülteni Telegram Onayına Gönder ──────────────────────────
+digestRouter.post('/:id/send-telegram', async (req, res): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const [digest] = await db
+      .select()
+      .from(instagramDigests)
+      .where(eq(instagramDigests.id, id))
+      .limit(1);
+
+    if (!digest) {
+      res.status(404).json({ success: false, error: 'Bülten bulunamadı' });
+      return;
+    }
+
+    const { sendDigestApprovalRequest } = await import('../../modules/telegram/bot.js');
+    const sent = await sendDigestApprovalRequest({
+      digestId: digest.id,
+      type: (digest.type as any) || 'manual',
+      articleCount: digest.articleIds.length,
+      videoPath: digest.videoPath,
+      caption: digest.caption,
+      periodInfo: 'Panelden derlenen bülten',
+    });
+
+    if (sent) {
+      res.json({ success: true, message: 'Bülten Telegram onayına gönderildi' });
+    } else {
+      res.status(500).json({ success: false, error: 'Telegram onay mesajı gönderilemedi' });
+    }
+  } catch (error: any) {
+    log.error({ err: error.message, id }, 'Bülten Telegram\'a gönderilemedi');
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ─── 3. Bülteni Instagram'a Yayınla ───────────────────────────────────────────
 digestRouter.post('/:id/publish', async (req, res) => {
   const { id } = req.params;
   try {
-    await publishDigest(id);
-    res.json({ success: true, message: 'Bülten Instagram Reels olarak başarıyla yayınlandı' });
+    const igResult = await publishDigest(id);
+    const { syncDigestStatusToTelegram } = await import('../../modules/telegram/bot.js');
+    await syncDigestStatusToTelegram(id, 'published', igResult.igPostUrl).catch(() => {});
+    res.json({
+      success: true,
+      message: 'Bülten Instagram Reels olarak başarıyla yayınlandı',
+      data: igResult,
+    });
   } catch (error: any) {
     log.error({ err: error.message, id }, 'Bülten yayınlama hatası');
     res.status(500).json({ success: false, error: error.message });

@@ -75,14 +75,14 @@ export const NICHE_KEYWORDS = {
 
   // Fırsatlar, İndirimler ve Ücretsiz Oyunlar
   deals: [
-    'deal', 'discount', 'sale', 'price drop', 'offer', 'best buy',
-    'indirim', 'fırsat', 'kampanya', 'indirimli satış', 'en ucuz', 'f/p', 'fiyat düşüşü', 'fiyat indirimi', 'uygun fiyat',
-    'msrp', 'street price', 'newegg', 'amazon deal', 'refurbished',
+    'hot deal', 'daily deal', 'deal of the day', 'discount code', 'flash sale', 'price drop', 'special offer', 'limited offer',
+    'indirim', 'fırsat', 'kampanya', 'indirimli satış', 'en ucuz', 'fiyat düşüşü', 'fiyat indirimi', 'uygun fiyat',
+    'amazon deal', 'refurbished',
     // Ücretsiz oyun terimleri
     'free game', 'free to keep', 'free to play', 'free this week',
     'epic games free', 'epic free', 'claim free', 'giveaway',
     'humble bundle', 'humble free', 'steam free', 'free on steam',
-    'price: free', '$0.00', 'bedava', 'ücretsiz oyun', 'ücretsiz al',
+    'price: free', '$0.00', 'bedava oyun', 'ücretsiz oyun', 'ücretsiz al',
     'epic games haftalık', 'steam bedava', 'g2a giveaway',
   ],
 
@@ -131,23 +131,33 @@ export type ArticleCategory =
   | 'mobile'
   | 'general';
 
-export function detectCategory(text: string): ArticleCategory {
-  const lower = text.toLowerCase();
+function hasKeywordMatch(text: string, keywords: readonly string[]): boolean {
+  for (const kw of keywords) {
+    if (kw.length <= 4) {
+      const escaped = kw.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) return true;
+    } else {
+      if (text.toLowerCase().includes(kw.toLowerCase())) return true;
+    }
+  }
+  return false;
+}
 
-  if (NICHE_KEYWORDS.deals.some((k) => lower.includes(k))) return 'deals';
-  if (NICHE_KEYWORDS.gpu.some((k) => lower.includes(k))) return 'gpu';
-  if (NICHE_KEYWORDS.mobile.some((k) => lower.includes(k))) return 'mobile';
-  if (NICHE_KEYWORDS.cpu.some((k) => lower.includes(k))) return 'cpu';
-  if (NICHE_KEYWORDS.ram.some((k) => lower.includes(k))) return 'ram';
-  if (NICHE_KEYWORDS.storage.some((k) => lower.includes(k))) return 'storage';
-  if (NICHE_KEYWORDS.motherboard.some((k) => lower.includes(k))) return 'motherboard';
-  if (NICHE_KEYWORDS.cooling.some((k) => lower.includes(k))) return 'cooling';
-  if (NICHE_KEYWORDS.peripherals.some((k) => lower.includes(k))) return 'peripherals';
-  if (NICHE_KEYWORDS.psu.some((k) => lower.includes(k))) return 'psu';
-  if (NICHE_KEYWORDS.case_pc.some((k) => lower.includes(k))) return 'case';
-  if (NICHE_KEYWORDS.gaming.some((k) => lower.includes(k))) return 'gaming';
-  if (NICHE_KEYWORDS.software.some((k) => lower.includes(k))) return 'software';
-  if (NICHE_KEYWORDS.ai.some((k) => lower.includes(k))) return 'ai';
+export function detectCategory(text: string): ArticleCategory {
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.gpu)) return 'gpu';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.cpu)) return 'cpu';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.mobile)) return 'mobile';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.ram)) return 'ram';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.storage)) return 'storage';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.motherboard)) return 'motherboard';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.cooling)) return 'cooling';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.peripherals)) return 'peripherals';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.psu)) return 'psu';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.case_pc)) return 'case';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.ai)) return 'ai';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.gaming)) return 'gaming';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.software)) return 'software';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.deals)) return 'deals';
 
   return 'general';
 }

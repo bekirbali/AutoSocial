@@ -1,6 +1,7 @@
 import Parser from 'rss-parser';
 import { createLogger } from '../../lib/logger.js';
 import type { SourceConfig } from '../../config/sources.js';
+import { cleanAndUpgradeImageUrl } from '../processor/downloader.js';
 
 const log = createLogger('fetcher:rss');
 
@@ -93,12 +94,16 @@ function mapItem(
   const summary = item['contentSnippet'] ?? item['content'] ?? item['summary'] ?? undefined;
 
   // Görsel URL tespiti — çeşitli RSS formatları dene
-  const imageUrl =
+  const rawImageUrl =
     item['mediaContent']?.['$']?.['url'] ??
     item['mediaThumbnail']?.['$']?.['url'] ??
     item['enclosure']?.['url'] ??
+    extractImageFromContent(item['content:encoded'] ?? '') ??
     extractImageFromContent(item['content'] ?? '') ??
+    extractImageFromContent(item['description'] ?? '') ??
     undefined;
+
+  const imageUrl = rawImageUrl ? cleanAndUpgradeImageUrl(rawImageUrl) : undefined;
 
   const publishedAt = item['pubDate']
     ? new Date(item['pubDate'])
@@ -122,6 +127,7 @@ function mapItem(
  * HTML içeriğinden ilk img src'yi çıkar
  */
 function extractImageFromContent(html: string): string | undefined {
+  if (!html) return undefined;
   const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
   return match?.[1];
 }

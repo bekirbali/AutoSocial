@@ -1,6 +1,7 @@
-import React from 'react';
-import { RefreshCw, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { RefreshCw, ShieldCheck, Zap, Hand, Loader2 } from 'lucide-react';
 import type { OverviewResponse } from '../types/api';
+import { toggleXManualMode } from '../lib/api';
 
 interface HeaderProps {
   overview: OverviewResponse | null;
@@ -13,6 +14,21 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
   isRefreshing,
 }) => {
+  const [isToggling, setIsToggling] = useState(false);
+  const isManualMode = overview?.system.xManualMode ?? false;
+
+  const handleToggleManualMode = async () => {
+    setIsToggling(true);
+    try {
+      await toggleXManualMode(!isManualMode);
+      onRefresh();
+    } catch (err: any) {
+      alert(`X yayınlama modu güncellenemedi: ${err.message}`);
+    } finally {
+      setIsToggling(false);
+    }
+  };
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl px-6 py-3.5">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -36,6 +52,44 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Live Badges & Quick Stats */}
         <div className="flex items-center gap-3">
+          {/* X (Twitter) Yayınlama Modu Toggle Butonu */}
+          <button
+            onClick={handleToggleManualMode}
+            disabled={isToggling}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer disabled:opacity-60 ${
+              isManualMode
+                ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm shadow-amber-500/10'
+                : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm shadow-cyan-500/10'
+            }`}
+            title={
+              isManualMode
+                ? 'X Manuel Mod Devrede (0 TL): X API çağrıları kapalıdır. Tweetleri elle paylaşıp panelden/Telegramdan onaylayabilirsiniz. Tıklayarak Otomatik API moduna geçebilirsiniz.'
+                : 'X Otomatik Mod Devrede: Tweetler X API ile otomatik paylaşılır. Bakiye bittiğinde tıklayarak Manuel (0 TL) moda geçebilirsiniz.'
+            }
+          >
+            {isToggling ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+            ) : isManualMode ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                <Hand className="w-3.5 h-3.5 text-amber-400" />
+                <span>X: Manuel (0 TL)</span>
+              </>
+            ) : (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                </span>
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>X: Otomatik API</span>
+              </>
+            )}
+          </button>
+
           {/* Mode Badge */}
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -72,3 +126,4 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+

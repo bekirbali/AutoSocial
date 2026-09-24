@@ -1,3 +1,4 @@
+import { isForeignDeal } from './dealFilter.js';
 import { ALL_KEYWORDS } from '../../config/keywords.js';
 import { createLogger } from '../../lib/logger.js';
 import type { FetchedItem } from '../fetcher/rss.js';
@@ -35,14 +36,12 @@ export function scoreArticle(
 
   // Yabancı kaynaklardaki (EN / DE) indirim/fırsat haberlerini filtrele
   // Proje hedef kitlesi Türk kullanıcılar olduğu için global indirimlerin değeri yok
-  if (item.lang === 'en' || item.lang === 'de') {
-    const text = `${item.title} ${item.summary ?? ''}`;
-    // Kelime sınırlarıyla (word boundaries) regex araması yaparak noktalama işaretlerine takılmayı önlüyoruz
-    const dealRegex = /\b(deal|deals|sale|sales|discount|discounts|free|bundle|giveaway|rabatt|angebote|schnäppchen|gratis|save|price drop|lowest price|cheap|clearance|price cut|off)\b/i;
-    
-    if (dealRegex.test(text) || /%\s*off/i.test(text) || /\$\d+\s*off/i.test(text)) {
-      total = 0; // Skor sıfırlanır, AI işleme girmeden 'low_score' olarak elenir
-    }
+  if (isForeignDeal(item)) {
+    log.info(
+      { url: item.url, title: item.title },
+      'Yabancı indirim/fırsat haberi tespit edildi, skor sıfırlanıyor',
+    );
+    total = 0; // Skor sıfırlanır, AI işleme girmeden 'low_score' olarak elenir
   }
 
   const breakdown: ScoreBreakdown = {
