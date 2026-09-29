@@ -83,10 +83,10 @@ export async function hasSimilarTitle(
   for (const { title: existingTitle } of recentTitles) {
     const normalizedExisting = normalizeTitle(existingTitle);
     const similarity = calculateSimilarity(normalizedTitle, normalizedExisting);
-    if (similarity >= 0.85) {
-      log.debug(
-        { title, existingTitle, similarity },
-        'Benzer başlık tespit edildi',
+    if (similarity >= 0.60) {
+      log.info(
+        { title, existingTitle, similarity: similarity.toFixed(2) },
+        'Aynı konulu kopya haber tespit edildi (cross-source duplicate)',
       );
       return true;
     }
@@ -95,24 +95,42 @@ export async function hasSimilarTitle(
   return false;
 }
 
+// Sık kullanılan genel İngilizce/Türkçe dolgu ve bağlaç kelimeleri
+const STOP_WORDS = new Set([
+  'with', 'that', 'this', 'from', 'over', 'more', 'after', 'will', 'says',
+  'said', 'have', 'into', 'report', 'reports', 'about', 'first', 'could',
+  'been', 'what', 'when', 'then', 'here', 'just', 'some', 'than', 'them',
+  'göre', 'yeni', 'olan', 'için', 'diye', 'kadar', 'daha', 'olarak', 'sonra',
+]);
+
 /**
  * Başlığı normalize et — küçük harf, noktalama temizle
  */
 function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[^\w\s]/g, '')
+    .replace(/[^\w\sğüşıöçĞÜŞİÖÇ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 /**
- * İki string arasındaki benzerlik oranı (0-1)
- * Jaro-Winkler yerine basit token overlap kullanıyoruz (daha hızlı)
+ * İki başlık arasındaki semantik teknoloji örtüşme oranı (Dice katsayısı)
+ * PS5, PS6, M4, RTX gibi 2-3 harfli kritik modelleri korur; genel stop word'leri eler.
  */
 function calculateSimilarity(a: string, b: string): number {
-  const tokensA = new Set(a.split(' ').filter((t) => t.length > 3));
-  const tokensB = new Set(b.split(' ').filter((t) => t.length > 3));
+  const tokensA = new Set(
+    a
+      .split(' ')
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 2 && !STOP_WORDS.has(t)),
+  );
+  const tokensB = new Set(
+    b
+      .split(' ')
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 2 && !STOP_WORDS.has(t)),
+  );
 
   if (tokensA.size === 0 || tokensB.size === 0) return 0;
 
@@ -121,5 +139,7 @@ function calculateSimilarity(a: string, b: string): number {
     if (tokensB.has(token)) intersection++;
   });
 
+  // Dice coefficient: 2 * |A ∩ B| / (|A| + |B|)
   return (2 * intersection) / (tokensA.size + tokensB.size);
 }
+

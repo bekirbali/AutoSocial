@@ -159,7 +159,7 @@ export function getTwitterWeightedLength(text: string): number {
  * Tweet metnini Twitter'ın ağırlıklı limitine uygun şekilde güvenli kırpar.
  * Emojileri ve kelime bütünlüğünü korur.
  */
-export function truncateToTwitterLimit(text: string, maxWeight: number = 265): string {
+export function truncateToTwitterLimit(text: string, maxWeight: number = 280): string {
   if (getTwitterWeightedLength(text) <= maxWeight) return text;
 
   const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
@@ -191,6 +191,6 @@ export function buildTweetText(text: string, hashtags: string[]): string {
   const hashtagStr = hashtags.join(' ');
   const combined = hashtagStr ? `${text}\n\n${hashtagStr}` : text;
 
-  // Güvenli Twitter ağırlıklı limit: 265 karakter (280 sınırına karşı 15 birim emojili marj)
-  return truncateToTwitterLimit(combined, 265);
+  // X (Twitter) resmi ağırlıklı sınırı: 280 karakter
+  return truncateToTwitterLimit(combined, 280);
 }

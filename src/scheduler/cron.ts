@@ -37,9 +37,8 @@ function analyticsCronExpression(): string {
   return `0 */${interval} * * *`;
 }
 
-// Instagram Günlük Toplu Haber Bültenleri (Reels Digest)
-const NOON_DIGEST_CRON = '0 13 * * *'; // Her gün 13:00
-const EVENING_DIGEST_CRON = '0 19 * * *'; // Her gün 19:00
+// Instagram Günlük TeknoFiltre Reels Özeti (Günün Raporu)
+const DAILY_DIGEST_CRON = '0 19 * * *'; // Her gün 19:00
 
 /**
  * Tüm recurring (tekrar eden) job'ları BullMQ'ya kayıt et
@@ -95,31 +94,19 @@ export async function registerCronJobs(): Promise<void> {
   );
   log.info({ cron: WEEKLY_REPORT_CRON }, '✅ Haftalık rapor cron kaydedildi');
 
-  // ─── 5. Instagram Günlük Bülten Cron'ları (13:00 ve 19:00) ─────────────────
+  // ─── 5. Instagram Günlük Bülten Cron'u (TeknoFiltre Günün Raporu - 19:00) ───
   if (env.ENABLE_INSTAGRAM) {
     await analyticsQueue.add(
-      'noon-digest',
+      'daily-digest',
       {
         triggeredBy: 'cron',
         lookbackHours: 0,
       } satisfies AnalyticsJobData,
       {
-        repeat: { pattern: NOON_DIGEST_CRON },
+        repeat: { pattern: DAILY_DIGEST_CRON },
       },
     );
-    log.info({ cron: NOON_DIGEST_CRON }, '✅ Öğle bülteni (13:00) cron kaydedildi');
-
-    await analyticsQueue.add(
-      'evening-digest',
-      {
-        triggeredBy: 'cron',
-        lookbackHours: 0,
-      } satisfies AnalyticsJobData,
-      {
-        repeat: { pattern: EVENING_DIGEST_CRON },
-      },
-    );
-    log.info({ cron: EVENING_DIGEST_CRON }, '✅ Akşam bülteni (19:00) cron kaydedildi');
+    log.info({ cron: DAILY_DIGEST_CRON }, '✅ Günün Raporu (19:00) cron kaydedildi');
   }
 
   log.info('Tüm cron job\'lar kaydedildi');

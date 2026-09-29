@@ -25,7 +25,7 @@ import {
 export const DigestStudioView: React.FC = () => {
   const [candidates, setCandidates] = useState<DigestCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [digestType, setDigestType] = useState<'noon' | 'evening' | 'manual'>('manual');
+  const [digestType, setDigestType] = useState<'noon' | 'evening' | 'manual'>('evening');
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(true);
   const [isComposing, setIsComposing] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -191,7 +191,7 @@ export const DigestStudioView: React.FC = () => {
               Reels & Bülten Stüdyosu
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-400 border border-pink-500/20">
-              DonanımPost
+              TeknoFiltre
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
@@ -419,9 +419,8 @@ export const DigestStudioView: React.FC = () => {
                       onChange={(e: any) => setDigestType(e.target.value)}
                       className="bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-pink-500"
                     >
-                      <option value="noon">Öğle Bülteni</option>
-                      <option value="evening">Akşam Bülteni</option>
-                      <option value="manual">Özel / Anlık Bülten</option>
+                      <option value="evening">Günün Raporu (19:00)</option>
+                      <option value="manual">Özel / Anlık Rapor</option>
                     </select>
                   </div>
 
@@ -432,7 +431,7 @@ export const DigestStudioView: React.FC = () => {
                   >
                     <Sparkles className={`w-4 h-4 ${isComposing ? 'animate-spin' : ''}`} />
                     <span>
-                      {isComposing ? 'FFmpeg ile Derleniyor...' : 'Reels Bültenini Derle'}
+                      {isComposing ? 'FFmpeg ile Derleniyor...' : 'Günün Raporunu Derle'}
                     </span>
                   </button>
                 </div>
@@ -561,11 +560,9 @@ export const DigestStudioView: React.FC = () => {
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white uppercase">
-                      {item.type === 'noon'
-                        ? 'Öğle Bülteni'
-                        : item.type === 'evening'
-                        ? 'Akşam Bülteni'
-                        : 'Özel Bülten'}
+                      {item.type === 'evening' || item.type === 'noon'
+                        ? 'Günün Raporu'
+                        : 'Özel Rapor'}
                     </span>
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${

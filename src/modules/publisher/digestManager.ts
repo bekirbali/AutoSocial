@@ -10,7 +10,8 @@ import {
 import { eq, and, desc, inArray, gte, isNotNull } from 'drizzle-orm';
 import { generateDigestSlideCard } from '../processor/image.js';
 import { generateDigestReel } from '../processor/digestGenerator.js';
-import { generateDigestCaption } from '../processor/ai.js';
+import { generateDigestCaption, generateReelsDigestScript } from '../processor/ai.js';
+import { generateSegmentedVoiceoverWithSubtitles } from '../processor/ttsService.js';
 import { postToInstagram } from './instagram.js';
 import { sendDigestApprovalRequest } from '../telegram/bot.js';
 import { createLogger } from '../../lib/logger.js';
@@ -277,7 +278,52 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
   const digestId = crypto.randomUUID();
   const outputVideoPath = path.join(videoOutputDir, `digest_${digestId}.mp4`);
 
-  await generateDigestReel(slideImages, outputVideoPath);
+  // 3. AI Spiker Metni ve Segmentli TTS Seslendirme + Karaoke Altyazı
+  let voiceoverAudioPath: string | undefined;
+  let subtitlesPath: string | undefined;
+  let slideDurations: number[] | undefined;
+  let totalDurationSeconds: number | undefined;
+
+  try {
+    const reelsScript = await generateReelsDigestScript(
+      orderedCandidates.map((c) => ({
+        title: getTurkishHeadline(c),
+        category: c.category ?? undefined,
+        sourceName: c.sourceName ?? undefined,
+        tweetText: c.tweetText,
+      })),
+    );
+
+    // Her slayt için tam segment metni hazırla.
+    // Outro metnini son haberin slaytına iliştir ki son slayt ekrandayken outro da tamamlansın.
+    const segments = reelsScript.segments.map((s, idx) => {
+      const isLast = idx === reelsScript.segments.length - 1;
+      const text = isLast && reelsScript.outroScript
+        ? `${s.script} ${reelsScript.outroScript}`
+        : s.script;
+      return { text, articleIndex: s.articleIndex };
+    });
+
+    const ttsResult = await generateSegmentedVoiceoverWithSubtitles(segments, {
+      baseFileName: `voice_${digestId}`,
+      wordsPerCue: 3,
+    });
+
+    voiceoverAudioPath = ttsResult.masterAudioPath;
+    subtitlesPath = ttsResult.masterAssPath; // Gerçek sarı boyamalı Karaoke ASS
+    slideDurations = ttsResult.slideDurations; // Her slayt için tam seslendirme süresi
+    totalDurationSeconds = ttsResult.totalDurationSeconds;
+  } catch (ttsErr: any) {
+    log.warn({ err: ttsErr.message }, 'Segmentli TTS veya Karaoke altyazı üretilemedi, standart müzikli video derlenecek');
+  }
+
+  // 4. FFmpeg ile video derle (Slaytlar + TTS + Altyazı + Arka Plan Beat)
+  await generateDigestReel(slideImages, outputVideoPath, {
+    voiceoverAudioPath,
+    subtitlesPath,
+    slideDurations,
+    totalDurationSeconds,
+  });
 
   // 4. Gemini ile ortak Türkçe Instagram açıklaması (caption) üret
   const caption = await generateDigestCaption(

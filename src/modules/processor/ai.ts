@@ -9,11 +9,14 @@ const log = createLogger('processor:ai');
 // Gemini istemcisi — modüle yüklendiğinde bir kez başlatılır
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
 export interface TweetGenerationResult {
   tweetText: string;
+  imageHook: string;
   translatedTitle: string;
+  impactScore: number;
+  impactReason?: string;
   hashtags: string[];
   tone: string;
   isThread: boolean;
@@ -25,6 +28,19 @@ export interface InstagramCaptionResult {
   translatedTitle: string;
   hashtags: string[];
   tone: string;
+}
+
+export interface ReelsScriptSegment {
+  articleIndex: number;
+  headline: string;
+  script: string;
+}
+
+export interface ReelsScriptResult {
+  spokenScript: string;
+  hookTitle: string;
+  segments: ReelsScriptSegment[];
+  outroScript: string;
 }
 
 /**
@@ -50,11 +66,7 @@ const CATEGORY_GUIDES: Record<ArticleCategory, { angle: string; hookHint: string
 
 /**
  * Gemini ile Türkçe yüksek etkileşimli küratör tweeti üret
- *
- * @param title - Orijinal haber başlığı (EN veya TR)
- * @param summary - Haber özeti (varsa)
- * @param sourceName - Kaynak adı
- * @param category - Haber kategorisi
+ * Format: Kanca + Haber + 💡 Cebe/İşe Etkisi + 💬 Tartışma Sorusu
  */
 export async function generateTweet(
   title: string,
@@ -66,32 +78,45 @@ export async function generateTweet(
   const guide = CATEGORY_GUIDES[category] || CATEGORY_GUIDES.general;
   const sourceInfo = summary ? `\n\nİçerik Detayları: ${summary.substring(0, 450)}` : '';
 
-  const prompt = `Sen X'te (Twitter) yüz binlerce teknoloji meraklısı, yazılımcı ve donanım tutkunu tarafından takip edilen, kuru ajans haberciliği YAPMAYAN, samimi ve uzman bir teknoloji küratörüsün.
+  const prompt = `Sen "TeknoFiltre" markasının kurucusu, bağımsız, samimi ve işi çok iyi bilen kıdemli bir teknoloji editörüsün. Sloganın: "Gereksizi eliyorum, ne işe yarar onu yazıyorum."
 
-GÖREV: Aşağıdaki içeriği analiz et ve X'te yüksek etkileşim, retweet ve yer imi (bookmark) alacak, değer odaklı ve hap bilgi içeren tek ve vurucu bir Türkçe tweet hazırla.
+GÖREV: Aşağıdaki içeriği analiz et ve X'te (Twitter) kesinlikle yapay zeka kokmayan, sanki işi bilen bir insan editör yazmış gibi duran, yüksek etkileşimli 4 paragraflı bir tweet hazırla.
 
 HABER BAŞLIĞI: ${title}
 KAYNAK: ${sourceName}${sourceInfo}
 KATEGORİ ODAĞI: ${guide.angle} (${guide.hookHint})
 
-KRİTİK İÇERİK KURALLARI:
-1. KURUMSAL VE AJANS DİLİNİ TERK ET: "X şirketi Y ürününü duyurdu", "...açıklandı", "...bildirildi" gibi monoton ajans kalıplarını KESİNLİKLE KULLANMA. Doğrudan konunun özüne giren, dinamik ve insansı bir dil kullan.
-2. GÜÇLÜ KANCA (HOOK): İlk satır akışta kaydırmayı durduran (scroll-stopper) nitelikte olsun. Okuyucunun "Burada ne oluyor?" demesini sağla.
-3. SOMUT DEĞER VE HAP BİLGİ: Varsa sayısal verileri (FPS, watt, fiyat, frekans, çekirdek, mimari detay) doğrudan paylaş. Okuyucu 5 saniyede net bir bilgi alsın.
-4. ETKİLEŞİM / TARTIŞMA ÇAĞRISI: Tweetin sonuna okuyucuyu yorum yapmaya sevk edecek zekice, kısa bir soru veya çarpıcı bir kapanış ekle (Örn: "Sizce bu adım pazar dengelerini değiştirir mi?", "Bu fiyata tercih eder miydiniz?").
-5. KARAKTER SINIRI: Tweet maksimum 240-270 karakter olmalıdır. Tüm kurgu, kanca ve hap bilgi bu tek tweette yer almalıdır.
-6. KESİNLİKLE HASHTAG KULLANMA: Metin içinde hiçbir '#' sembolü yer almasın.
-7. YERİNDE EMOJİ: En fazla 1-2 adet (ör. ⚡, 🚀, 💡, 🔥), göz yormayan yerinde emoji kullan.
-8. KESİNLİKLE YASAKLI YÖNLENDİRME KALIPLARI: "Detaylar zincirde", "detaylar aşağıda", "devamı flood'da", "zincirde", "thread", "flood" gibi devam/yönlendirme ifadelerini KESİNLİKLE KULLANMA. Bu tek ve bağımsız bir tweettir, devamı yoktur.
+KRİTİK FORMAT VE ÜSLUP KURALLARI:
+Tweet tam olarak şu 4 bloktan (paragraftan) oluşmalı ve bloklar arasında mutlaka boşluk (\\n\\n) bulunmalıdır:
+
+1. VURUCU KANCA (Tek Satır): Akışta kaydırmayı anında durduran, merak uyandıran çarpıcı bir cümle veya tespit.
+2. HABERİN ÖZÜ (1-2 Cümle): Ne olduğunu somut verilerle (fiyat, FPS, watt, çekirdek, mimari) doğrudan anlat. Kuru ajans dilini ("açıklandı", "duyuruldu", "bildirildi") ASLA KULLANMA.
+3. TÜKETİCİ / CEBE ETKİSİ (Doğal İnsan Cümlesi): Bu gelişmenin sıradan bir teknoloji meraklısının cebine, sistemine veya satın alma kararına etkisini anlat.
+   - ÇOK ÖNEMLİ KURAL: "💡", "Cebe Etkisi:", "Bizim Yorumumuz:" gibi yapay zeka etiketleri KESİNLİKLE YASAKTIR.
+   - Bunun yerine cümleye bir insan editör gibi doğal bağlaçlarla başla: "Bu da pratikte...", "Yani özetle...", "Kısacası bu gelişme...", "Bu yeni kart almadan...", "Bu durum cebimiz için..." gibi akıcı konuşma dili kullan.
+4. TARTIŞMA ÇAĞRISI (Doğal Soru): Okuyucuyu yorum yapmaya davet eden samimi bir soru cümlesi.
+   - ÇOK ÖNEMLİ KURAL: "💬" veya benzeri robotik emojiler KULLANMA. Doğrudan soru cümlesini yaz (Örn: "Sizce bu fiyata değer mi?", "Sizce Nvidia bu hamleye izin verir mi?").
+
+KESİN YASAKLAR VE SINIRLAR:
+- EMOJİ KİRLİLİĞİ KESİNLİKLE YASAKTIR: Metin içinde "💡", "💬", "👇", "🚀" gibi yapay zeka klişesi emojileri KULLANMA. Metin tamamen doğal insan yazısı gibi durmalıdır.
+- ETİKET YASAKTIR: "Cebe Etkisi:", "Özet:", "Yorum:" gibi başlık kalıpları yazma.
+- KARAKTER SINIRI: Tweet maksimum 270 karakter olmalıdır.
+- HASHTAG KESİNLİKLE YASAKTIR (# sembolü kullanma).
+- THREAD/FLOOD YASAKTIR ("detaylar aşağıda", "devamı yorumda" gibi kalıplar yasaktır).
+- GÖRSEL İÇİN KANCA (imageHook): Görselin üzerine basılacak en fazla 3-5 KELİMELİK dev, vurucu bir kanca (Örn: "Orta Segmente Amiral Gemisi Gücü", "1000 Dolar Altı Devrim").
+- TÜKETİCİ ETKİ PUANI (impactScore 1-10): Haberin tüketici cebine/hayatına etkisi (1-10).
 
 ÇIKTI FORMATI (YALNIZCA GEÇERLİ JSON):
 {
-  "tweetText": "Vurucu tek tweet (kanca + hap bilgi + tartışma sorusu)",
-  "translatedTitle": "Görsel kart için kısa, vurucu Türkçe başlık (maks 55 karakter)",
-  "tone": "küratör"
+  "tweetText": "[Kanca]\\n\\n[Haber Özeti]\\n\\n[Doğal dille cebe/işe etkisi]\\n\\n[Doğal tartışma sorusu]",
+  "imageHook": "En fazla 3-5 kelimelik dev kanca",
+  "translatedTitle": "Kısa Türkçe başlık (maks 55 karakter)",
+  "impactScore": 8,
+  "impactReason": "Tüketiciye etkisi...",
+  "tone": "samimi editör"
 }
 
-Sadece JSON döndür, markdown formatı dışında hiçbir şey yazma.`;
+Sadece JSON döndür.`;
 
   try {
     log.debug({ title, category, hasVideo: !!videoPath }, 'Gemini tweet üretiliyor');
@@ -102,7 +127,7 @@ Sadece JSON döndür, markdown formatı dışında hiçbir şey yazma.`;
       log.info('Video Gemini\'ye yükleniyor...');
       const uploadResult = await fileManager.uploadFile(videoPath, {
         mimeType: 'video/mp4',
-        displayName: 'AutoSocial Video',
+        displayName: 'TeknoFiltre Video',
       });
       
       contentArgs = [
@@ -127,38 +152,49 @@ Sadece JSON döndür, markdown formatı dışında hiçbir şey yazma.`;
 
     const parsed = JSON.parse(jsonMatch[0]) as {
       tweetText: string;
+      imageHook?: string;
       translatedTitle?: string;
-      tone: string;
+      impactScore?: number;
+      impactReason?: string;
+      tone?: string;
     };
 
-    // Güvenlik kontrolleri
+    // Güvenlik kontrolleri ve AI kalıntı temizliği
     let tweetText = sanitizeTweetText(parsed.tweetText);
-    // Yapay zeka kaçaklarını önlemek için yönlendirme kalıplarını temizle
+    
+    // Robotik etiket ve emoji kaçaklarını temizle
     tweetText = tweetText
+      .replace(/[💡💬📌🚀⚡️]/g, '')
+      .replace(/\s*(Bizim Yorumumuz|Cebe Etkisi):\s*/gi, ' ')
       .replace(/\s*detaylar\s+(zincirde|aşağıda|flood'da|yorumda|yorumlarda)[.!?\s👇]*/gi, '')
       .replace(/\s*devamı\s+(zincirde|aşağıda|flood'da|yorumda|yorumlarda)[.!?\s👇]*/gi, '')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
 
-    const hashtags: string[] = []; // Kullanıcı isteği üzerine hashtag'ler tamamen kaldırıldı
+    const hashtags: string[] = []; // Hashtag'ler tamamen kaldırıldı
 
     // Karakter uzunluğu kontrolü
     if (tweetText.length > 280) {
       log.warn(
         { length: tweetText.length, title },
-        'Tweet metni çok uzun, kırpılıyor',
+        'Tweet metni 280 sınırı için güvenli sınıra alınıyor',
       );
     }
 
     const finalTweet = tweetText.substring(0, 280);
+    const imageHook = (parsed.imageHook || parsed.translatedTitle || title).replace(/[#*`]/g, '').trim();
 
     log.info(
-      { title, category, tweetLength: finalTweet.length },
+      { title, category, tweetLength: finalTweet.length, impactScore: parsed.impactScore, imageHook },
       'Tweet üretildi',
     );
 
     return {
       tweetText: finalTweet,
+      imageHook,
       translatedTitle: parsed.translatedTitle || title,
+      impactScore: parsed.impactScore ?? 7,
+      impactReason: parsed.impactReason,
       hashtags,
       tone: parsed.tone ?? 'küratör',
       isThread: false,
@@ -292,18 +328,13 @@ export async function generateDigestCaption(
   articles: DigestArticleInput[],
   digestType: 'noon' | 'evening' | 'manual',
 ): Promise<string> {
-  const bultenAd =
-    digestType === 'noon'
-      ? 'Öğle Bülteni'
-      : digestType === 'evening'
-      ? 'Akşam Bülteni'
-      : 'Günün Teknoloji Özeti';
+  const bultenAd = 'Günün Raporu';
 
   const articlesListText = articles
     .map((a, i) => `${i + 1}. [${a.sourceName || 'Kaynak'}] ${a.title}${a.tweetText ? ` (Özet: ${a.tweetText})` : ''}`)
     .join('\n');
 
-  const prompt = `Sen "DonanımPost" teknoloji yayıncılığı markasının baş editörüsün.
+  const prompt = `Sen "TeknoFiltre" teknoloji yayıncılığı markasının baş editörüsün. Sloganın: "Gereksizi eliyorum, ne işe yarar onu yazıyorum."
 GÖREV: Bugün Instagram Reels'ta yayınlanacak olan toplu teknoloji bülteni videosu için yüksek etkileşimli, merak uyandıran ve okunaklı bir Türkçe Instagram açıklaması (caption) hazırla.
 
 BÜLTEN TÜRÜ: ${bultenAd}
@@ -311,13 +342,13 @@ BÜLTENDE YER ALAN HABERLER:
 ${articlesListText}
 
 KURALLAR:
-1. Başlangıç: Vurucu bir başlık (örn: "⚡️ DonanımPost ${bultenAd}" veya "DonanımPost ile Günün Teknoloji Özeti").
+1. Başlangıç: Vurucu bir başlık (örn: "⚡️ TeknoFiltre ${bultenAd} | Günün 3 Önemli Gelişmesi").
 2. Maddeler: Bültendeki her haberi numaralandırılmış emojiyle (1️⃣, 2️⃣, 3️⃣...) açıkla ve netleştir. İzleyiciler başlığı zaten video slaytında gördüğü için, bu açıklama metninde haberin ne anlama geldiğini, perde arkasını ve önemli teknik detayını aktaran bilgilendirici ve doyurucu 1-2 cümle yaz.
 3. Etkileşim Çağrısı (CTA): Okuyuculara konuyla ilgili samimi bir soru sor (örn: "💬 Sizin günün en çok dikkatinizi çeken gelişmesi hangisi oldu? Yorumlarda buluşalım!").
-4. Marka ve Takip Daveti: DonanımPost'u takip etmeye davet et.
-5. Hashtag: 5-8 adet en popüler teknoloji etiketi ekle (#donanımpost #donanım #teknoloji #ekrankartı #oyun #reels vb. Marka etiketi kesinlikle #donanımpost olmalıdır, "u" harfiyle #donanumpost yazma).
-6. "AutoSocial" kelimesini ASLA kullanma; marka adı kesinlikle "DonanımPost"tur.
-7. Uzunluk Limiti: Instagram'ın maksimum açıklama limiti 2.200 karakterdir. Tüm metin (başlık, 7 haberin detayları, CTA ve etiketler dahil) KESİNLİKLE 1.700 ile 2.050 karakter arasında olmalıdır, 2.100 karakteri ASLA geçmemelidir.
+4. Marka ve Takip Daveti: TeknoFiltre'yi takip etmeye davet et.
+5. Hashtag: 5-8 adet en popüler teknoloji etiketi ekle (#teknofiltre #teknoloji #donanım #oyun #reels vb.).
+6. "AutoSocial" veya "DonanımPost" kelimelerini ASLA kullanma; marka adı kesinlikle "TeknoFiltre"dir.
+7. Uzunluk Limiti: Instagram'ın maksimum açıklama limiti 2.200 karakterdir. Tüm metin KESİNLİKLE 1.500 ile 2.050 karakter arasında olmalıdır.
 
 ÇIKTI FORMATI:
 Sadece aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
@@ -335,17 +366,160 @@ Sadece aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
       const parsed = JSON.parse(jsonMatch[0]);
       if (parsed.caption) {
         log.info({ digestType, articleCount: articles.length }, 'Bülten Instagram caption üretildi');
-        return parsed.caption.replace(/#donanumpost\b/gi, '#donanımpost');
+        return parsed.caption.replace(/#donanumpost\b|#donanımpost\b/gi, '#teknofiltre');
       }
     }
 
-    // JSON parse edilemezse doğrudan metni temizle ve döndür
-    return responseText.replace(/```json|```/g, '').replace(/#donanumpost\b/gi, '#donanımpost').trim();
+    return responseText.replace(/```json|```/g, '').replace(/#donanumpost\b|#donanımpost\b/gi, '#teknofiltre').trim();
   } catch (err: any) {
     log.error({ err: err.message }, 'Gemini bülten caption üretimi başarısız, şablon fallback kullanılıyor');
-    // Fallback caption
-    const bullets = articles.map((a, i) => `${i + 1}️⃣ ${a.title}`).join('\n');
-    return `⚡️ DonanımPost ${bultenAd}\n\n${bullets}\n\n💬 Günün en çok dikkatinizi çeken haberi hangisi oldu? Yorumlarda konuşalım!\n\n#donanım #teknoloji #donanımpost #reels`;
+    const bullets = articles.map((a, i) => {
+      const details = a.tweetText ? `\n\n${a.tweetText.trim()}` : '';
+      return `${i + 1}️⃣ ${a.title}${details}`;
+    }).join('\n\n─────────────\n\n');
+    return `⚡️ TeknoFiltre ${bultenAd}\n\nGünün öne çıkan teknoloji ve donanım başlıkları:\n\n${bullets}\n\n💬 Siz bu gelişmeler hakkında ne düşünüyorsunuz? Yorumlarda buluşalım!\n\n#teknoloji #teknofiltre #donanım #reels`;
+  }
+}
+
+/**
+ * Günlük Instagram Reels bülteni için doğrudan şok kancayla başlayan ve her haber için
+ * 1-e-1 eşleşen segmentler üreten AI Türkçe seslendirme metni üretir.
+ * Sıfır selamlaşma, saf hap bilgi, her haberin eksiksiz aktarımı ve sonda CTA.
+ */
+function extractPunchyFallbackHook(title: string, tweetText?: string): string {
+  if (tweetText) {
+    // Tweet metninin ilk satırı veya ilk cümlesi zaten format gereği vurucu kancadır
+    const firstSentence = tweetText.split(/\n\n|[.!?]\s+/)[0]?.trim();
+    if (firstSentence && firstSentence.length >= 10 && firstSentence.length <= 110) {
+      return firstSentence.endsWith('.') ? firstSentence : `${firstSentence}.`;
+    }
+  }
+  return title.endsWith('.') ? title : `${title}.`;
+}
+
+export async function generateReelsDigestScript(
+  articles: DigestArticleInput[],
+): Promise<ReelsScriptResult> {
+  const articlesListText = articles
+    .map((a, i) => `${i + 1}. [Haber ${i + 1}] ${a.title}${a.tweetText ? ` (Özet: ${a.tweetText})` : ''}`)
+    .join('\n');
+
+  const prompt = `Sen "TeknoFiltre" markasının Instagram Reels spikerisin.
+GÖREV: Aşağıdaki ${articles.length} haber için ultra dinamik, çok kısa ve akıcı bir Türkçe Reels seslendirme metni hazırla.
+VİDEO YAPISI: Videoda ${articles.length} adet slayt art arda gösterilecek. Her slayt tam olarak bir habere aittir.
+
+HABER LİSTESİ:
+${articlesListText}
+
+ALTIN KURALLAR (VİDEO SÜRESİ KESİNLİKLE 25-35 SANİYEYİ GEÇMEMELİDİR):
+1. SAF HAP BİLGİ & MİKRO ÖZET (EN KRİTİK KURAL):
+   - Detayları, teknik özellikleri ve cebe etkisini videoda ANLATMA; tüm detaylar Instagram açıklamasında (caption) verilecek.
+   - Her segment KESİNLİKLE tek bir vurucu cümle ve MAKSİMUM 10-14 KELİME olmalıdır (TTS okuma süresi ~6-8 saniye).
+   - Uzun cümleler, teknik izahatlar ve yan detaylar KESİNLİKLE YASAKTIR.
+   - Örnek: "AMD kartlara Nvidia dopingi geldi! Gayriresmi modla eldeki karta bedava devasa FPS artışı sağlandı."
+2. GİRİŞTE SELAMLAŞMA KESİNLİKLE YASAKTIR:
+   - "Herkese merhaba", "Selamlar", "Bugün sizlerle" gibi selamlaşma veya boş giriş kalıplarını KESİNLİKLE KULLANMA. İlk kelime doğrudan en çarpıcı habere dair şok bir kanca olmalı!
+3. HER HABER İÇİN TAM 1 SEGMENT (ZORUNLU - HİÇBİR HABERİ ATLAYAMAZSIN):
+   - "segments" dizisi tam olarak gelen haber sayısı kadar eleman İÇERMEK ZORUNDADIR (${articles.length} adet).
+   - Her slayt ekrandayken tam olarak o haber seslendirilecektir.
+4. ÇOK KISA OUTRO (MAKSİMUM 8-10 KELİME):
+   - outroScript: Videoyu gereksiz uzatmadan tek cümleyle bitir:
+     "Detaylar açıklamada. Teknoloji haberleri için TeknoFiltre'yi takip etmeyi unutmayın."
+5. DİL VE DİKSİYON: Konuşma diliyle, net ve duraksamasız yaz.
+
+ÇIKTI JSON FORMATI:
+{
+  "hookTitle": "Videonun kapağı için 3-5 kelimelik dev kanca",
+  "segments": [
+    {
+      "articleIndex": 1,
+      "headline": "1. haberin kısa başlığı",
+      "script": "1. haber için maksimum 10-14 kelimelik tek cümlelik hap bilgi."
+    }
+  ],
+  "outroScript": "Detaylar açıklamada. Teknoloji haberleri için TeknoFiltre'yi takip etmeyi unutmayın."
+}
+
+Sadece JSON döndür.`;
+
+  try {
+    const result = await flashModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+    const responseText = result.response.text().trim();
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('Gemini Reels script için geçersiz JSON döndürdü');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      hookTitle: string;
+      segments?: Array<{ articleIndex?: number; headline?: string; script: string }>;
+      outroScript?: string;
+    };
+
+    let outro = parsed.outroScript
+      ? parsed.outroScript.replace(/gereksiz\s*detaysız\s*/gi, '').trim()
+      : "Detaylar açıklamada. Teknoloji haberleri için TeknoFiltre'yi takip etmeyi unutmayın.";
+    if (!outro.includes("TeknoFiltre'yi takip")) {
+      outro += " Teknoloji haberleri için TeknoFiltre'yi takip etmeyi unutmayın.";
+    }
+    const rawSegments = Array.isArray(parsed.segments) ? parsed.segments : [];
+
+    // Gelen haberlerin tamamının kapsandığını doğrula, eksik varsa tamamla
+    const finalSegments: ReelsScriptSegment[] = [];
+    for (let i = 0; i < articles.length; i++) {
+      const art = articles[i];
+      const matched = rawSegments.find((s) => s.articleIndex === i + 1) || rawSegments[i];
+      if (matched && matched.script && matched.script.trim().length > 5) {
+        finalSegments.push({
+          articleIndex: i + 1,
+          headline: matched.headline || art.title,
+          script: matched.script.trim(),
+        });
+      } else {
+        // Fallback segment: Haberin sadece vurucu kancasını al (videoyu asla uzatma)
+        finalSegments.push({
+          articleIndex: i + 1,
+          headline: art.title,
+          script: extractPunchyFallbackHook(art.title, art.tweetText),
+        });
+      }
+    }
+
+    // Tam seslendirme metni
+    const spokenScript = `${finalSegments.map((s) => s.script).join(' ')} ${outro}`.trim();
+
+    log.info(
+      {
+        hookTitle: parsed.hookTitle,
+        segmentCount: finalSegments.length,
+        spokenLength: spokenScript.length,
+      },
+      '🎬 Reels segmentli spiker metni başarıyla üretildi',
+    );
+
+    return {
+      hookTitle: parsed.hookTitle || 'TeknoFiltre Günün Özeti',
+      segments: finalSegments,
+      outroScript: outro,
+      spokenScript,
+    };
+  } catch (err: any) {
+    log.error({ err: err.message }, 'Gemini Reels script üretimi başarısız, kısa fallback oluşturuluyor');
+    const outro = "Detaylar açıklamada. Teknoloji haberleri için TeknoFiltre'yi takip etmeyi unutmayın.";
+    const fallbackSegments: ReelsScriptSegment[] = articles.map((art, i) => ({
+      articleIndex: i + 1,
+      headline: art.title,
+      script: extractPunchyFallbackHook(art.title, art.tweetText),
+    }));
+
+    return {
+      hookTitle: 'TeknoFiltre Günün Özeti',
+      segments: fallbackSegments,
+      outroScript: outro,
+      spokenScript: `${fallbackSegments.map((s) => s.script).join(' ')} ${outro}`,
+    };
   }
 }
 
@@ -358,7 +532,86 @@ function sanitizeTweetText(text: string): string {
     .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[e-posta]')
     // Telefon numaraları
     .replace(/(\+?\d[\d\s-]{8,}\d)/g, '[tel]')
-    // Aşırı boşluklar
-    .replace(/\s+/g, ' ')
+    // Satır içi birden fazla boşluğu tek boşluğa indir (satır sonlarını korur)
+    .replace(/[^\S\r\n]+/g, ' ')
+    // 3 veya daha fazla satır sonunu çift satır sonuna (\n\n) indir
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+export interface CarouselScriptResult {
+  hook: string;
+  summaryTitle: string;
+  summary: string;
+  commentaryTitle: string;
+  commentary: string;
+  questionTitle: string;
+  question: string;
+}
+
+/**
+ * Sakin günlerde 4 slaytlık derin analiz Instagram karoseli için dinamik başlık ve metin üretir
+ */
+export async function generateCarouselScript(
+  title: string,
+  summary: string | undefined,
+  sourceName: string,
+  category: ArticleCategory,
+): Promise<CarouselScriptResult> {
+  const prompt = `Sen "TeknoFiltre" markasının teknoloji editörüsün.
+Aşağıdaki haber için Instagram'da 4 slaytlık bir Carousel (kaydırmalı kart) paketi hazırlayacaksın.
+
+HABER BAŞLIĞI: "${title}"
+KAYNAK: "${sourceName}" | KATEGORİ: "${category}"
+ÖZET / DETAY: "${summary || title}"
+
+TASARIM VE METİN KURALLARI:
+1. ŞABLON BAŞLIK KESİNLİKLE YASAKTIR: "Olay Ne?", "Gelişme", "Sana Etkisi Ne?", "Değer Katma" gibi bayat ve şablon başlıklar KULLANILMAYACAK.
+   - 2. Slayt Başlığı (summaryTitle): Haberin özüne dair 2-4 kelimelik çarpıcı, dinamik bir başlık olmalı (Örn: "40 TFLOPS Güç Geliyor", "Zen 5 Tahtı Devraldı", "M4 Max Sahneye Çıktı").
+   - 3. Slayt Başlığı (commentaryTitle): Tüketiciye/cebe etkisine dair 2-4 kelimelik dinamik bir başlık olmalı (Örn: "Fiyat 50 Bini Aşabilir", "Yeni PSU Gerekecek", "Oyun İçin Fazla Lüks").
+   - 4. Slayt Başlığı (questionTitle): Soruya özel kısa başlık (Örn: "Bu Güce Değer mi?", "Sence Alınır mı?", "Yükseltmeye Gerek Var mı?").
+2. SLAYT 1 (Kapak Kancası - hook): 3-5 kelimelik dev merak kancası (Örn: "PS5'ten 3 Kat Güçlü?").
+3. SLAYT 2 (Haberin Özü - summary): 2-3 cümle, teknik veri ve net sayılar içeren akıcı özet.
+4. SLAYT 3 (Cebe/Kullanıcıya Etkisi - commentary): 1-2 cümle, kullanıcının cebine, sistemine veya oyununa doğrudan etkisi.
+5. SLAYT 4 (Soru - question): Okuyucuyu yorum yazmaya teşvik eden vurucu 1 soru.
+
+ÇIKTI JSON FORMATI:
+{
+  "hook": "Kapak için 3-5 kelimelik kanca",
+  "summaryTitle": "2-4 kelimelik dinamik başlık",
+  "summary": "Haberin net 2-3 cümlelik özeti",
+  "commentaryTitle": "2-4 kelimelik dinamik etki başlığı",
+  "commentary": "Kullanıcıya/cebe etkisi yorumu",
+  "questionTitle": "2-3 kelimelik soru başlığı",
+  "question": "Yorum yazdıran soru cümlesi"
+}
+
+Sadece JSON döndür.`;
+
+  try {
+    const result = await flashModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+    const responseText = result.response.text().trim();
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('Gemini Carousel için geçersiz JSON döndürdü');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as CarouselScriptResult;
+    log.info({ hook: parsed.hook, s2Title: parsed.summaryTitle, s3Title: parsed.commentaryTitle }, '📑 Carousel metinleri üretildi');
+    return parsed;
+  } catch (err: any) {
+    log.error({ err: err.message }, 'Carousel Gemini üretimi başarısız, fallback oluşturuluyor');
+    return {
+      hook: title.substring(0, 40),
+      summaryTitle: 'İşin Özü',
+      summary: summary || title,
+      commentaryTitle: 'Cebe Yansıması',
+      commentary: 'Bu donanım hamlesi pazardaki fiyat dengelerini doğrudan değiştirebilir.',
+      questionTitle: 'Sence Değer mi?',
+      question: 'Siz bu gelişme hakkında ne düşünüyorsunuz? Yorumlarda buluşalım.',
+    };
+  }
+}
+

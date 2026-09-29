@@ -34,13 +34,15 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         {/* Brand & Identity */}
         <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-white/20">
-            <span className="font-black text-white text-lg tracking-tighter">DP</span>
-          </div>
+          <img
+            src="./logo.jpg"
+            alt="TeknoFiltre Logo"
+            className="w-10 h-10 rounded-xl object-cover shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-500/30"
+          />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight text-white m-0 font-['Outfit']">
-                Donanım<span className="text-cyan-400">Post</span>
+                Tekno<span className="text-cyan-400">Filtre</span>
               </h1>
               <span className="px-2 py-0.5 text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 rounded-full">
                 KOKPİT v1.0

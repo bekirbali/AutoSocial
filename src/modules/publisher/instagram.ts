@@ -89,7 +89,10 @@ export async function postToInstagram(
 
   const hashtagStr = hashtags.join(' ');
   const rawCaption = hashtagStr ? `${caption}\n\n${hashtagStr}` : caption;
-  let fullCaption = rawCaption.replace(/#donanumpost\b/gi, '#donanımpost').trim();
+  let fullCaption = rawCaption
+    .replace(/#donanumpost\b/gi, '#teknofiltre')
+    .replace(/#donanımpost\b/gi, '#teknofiltre')
+    .trim();
 
   // Instagram Graph API maksimum 2200 karakter kabul eder; aşarsa "The caption was too long" hatası döner
   const MAX_IG_CAPTION_LEN = 2190;

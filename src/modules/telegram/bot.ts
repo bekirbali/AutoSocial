@@ -753,12 +753,7 @@ export async function sendDigestApprovalRequest(data: DigestApprovalData): Promi
     return false;
   }
 
-  const typeName =
-    data.type === 'noon'
-      ? '☀️ ÖĞLE TEKNOLOJİ BÜLTENİ'
-      : data.type === 'evening'
-      ? '🌙 AKŞAM TEKNOLOJİ BÜLTENİ'
-      : '⚡️ GÜNÜN TEKNOLOJİ BÜLTENİ';
+  const typeName = data.type === 'manual' ? 'ÖZEL RAPOR' : 'GÜNÜN RAPORU';
 
   const buttons = Markup.inlineKeyboard([
     [
@@ -770,7 +765,7 @@ export async function sendDigestApprovalRequest(data: DigestApprovalData): Promi
   // Telegram video caption limiti 1024 karakterdir.
   // Onaylandığında mesaja eklenecek durum ibaresi (~50 karakter) için 960 karakter güvenli tavan belirliyoruz.
   const MAX_SAFE_CAPTION_LEN = 960;
-  const header = `🎬 <b>DONANIMPOST ${typeName}</b>\n\n`
+  const header = `🎬 <b>TEKNOFİLTRE • ${typeName}</b>\n\n`
     + `📊 <b>Kapsanan Haber Sayısı:</b> ${data.articleCount}\n`
     + (data.periodInfo ? `⏱ <b>Aralık:</b> ${data.periodInfo}\n\n` : '\n')
     + `📸 <b>Instagram Açıklaması:</b>\n`;

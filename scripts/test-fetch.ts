@@ -9,8 +9,8 @@ import { SOURCES } from '../src/config/sources.js';
 async function main() {
   console.log('\n🧪 RSS Fetch Testi\n');
 
-  // İlk kaynaktan test et
-  const testSource = SOURCES[0]!;
+  // Aktif olan ilk kaynaktan test et
+  const testSource = SOURCES.find((s) => s.isActive) || SOURCES[1]!;
   console.log(`📡 Kaynak: ${testSource.name}`);
   console.log(`🔗 URL: ${testSource.rssUrl}\n`);
 

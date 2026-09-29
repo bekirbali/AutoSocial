@@ -34,6 +34,16 @@ export function scoreArticle(
   let total =
     freshness * 0.4 + keyword * 0.3 + sourceScore * 0.2 + quality * 0.1;
 
+  // Negatif filtre: Sürücü yamaları, rutin firmware, çeyrek finansal raporları, önemsiz renk/aksesuar haberleri
+  const noiseCheck = checkNoisePenalty(item.title, item.summary);
+  if (noiseCheck.isNoise) {
+    log.info(
+      { url: item.url, title: item.title, reason: noiseCheck.reason },
+      'Rutin/Gürültü haber tespit edildi, negatif ceza uygulanıyor (-45 puan)',
+    );
+    total = Math.max(0, total - 45);
+  }
+
   // Yabancı kaynaklardaki (EN / DE) indirim/fırsat haberlerini filtrele
   // Proje hedef kitlesi Türk kullanıcılar olduğu için global indirimlerin değeri yok
   if (isForeignDeal(item)) {
@@ -137,3 +147,73 @@ function calculateTitleQuality(title: string): number {
 
   return Math.max(0, Math.min(100, score));
 }
+
+/**
+ * Rutin, sıkıcı veya tüketicinin doğrudan cebine/işine yaramayan gürültü haberleri tespit eder.
+ */
+function checkNoisePenalty(title: string, summary?: string): { isNoise: boolean; reason?: string } {
+  const text = `${title} ${summary ?? ''}`.toLowerCase();
+
+  // 1. Sürücü ve yama / rutin firmware
+  const driverPatterns = [
+    /\bdriver\s+update\b/i,
+    /\bgame\s+ready\s+driver\b/i,
+    /\bradeon\s+software\b/i,
+    /\bradeon\s+adrenalin\b/i,
+    /\bgeforce\s+driver\b/i,
+    /\bwhql\s+driver\b/i,
+    /\bbios\s+update\b/i,
+    /\bfirmware\s+update\b/i,
+    /\bpatch\s+notes\b/i,
+    /\bhotfix\b/i,
+    /\bmicrocode\b/i,
+    /\bsürücü\s+güncelleme/i,
+    /\byeni\s+sürücü\b/i,
+  ];
+  if (driverPatterns.some((p) => p.test(text))) {
+    return { isNoise: true, reason: 'driver_or_patch' };
+  }
+
+  // 2. Çeyrek finansal raporlar, şirket hisse ve borsa haberleri
+  const financialPatterns = [
+    /\bquarterly\s+(results|earnings|revenue)\b/i,
+    /\bfinancial\s+results\b/i,
+    /\bq[1-4]\s+(results|earnings|revenue|profit)\b/i,
+    /\bearnings\s+(call|report)\b/i,
+    /\brevenue\s+(rises|falls|up|down|hits)\b/i,
+    /\bshares\s+(rise|fall|drop|surge)\b/i,
+    /\bmarket\s+cap\b/i,
+    /\bçeyrek\s+sonuç/i,
+    /\bmali\s+tablo/i,
+    /\bgelir\s+rapor/i,
+    /\bhisseleri\s+(yükseldi|düştü|fırladı)/i,
+  ];
+  if (financialPatterns.some((p) => p.test(text))) {
+    return { isNoise: true, reason: 'corporate_financial' };
+  }
+
+  // 3. Önemsiz renk seçenekleri ve basit kılıf aksesuarları
+  const accessoryPatterns = [
+    /\bnow\s+available\s+in\s+(black|white|purple|pink|blue|red|green|gold|silver)\b/i,
+    /\bnew\s+color\s+option\b/i,
+    /\byeni\s+renk\s+seçeneği\b/i,
+    /\bprotective\s+case\b/i,
+    /\bphone\s+cases?\b/i,
+  ];
+  if (accessoryPatterns.some((p) => p.test(text))) {
+    return { isNoise: true, reason: 'minor_color_or_accessory' };
+  }
+
+  // 4. Şirket içi yönetici atamaları
+  const execPatterns = [
+    /\bappoints\s+new\b/i,
+    /\bnames\s+new\s+(ceo|cfo|coo|president|vp)\b/i,
+    /\bboard\s+of\s+directors\b/i,
+  ];
+  if (execPatterns.some((p) => p.test(text))) {
+    return { isNoise: true, reason: 'executive_appointment' };
+  }
+
+  return { isNoise: false };
+}
+

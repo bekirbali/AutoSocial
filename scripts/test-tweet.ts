@@ -19,11 +19,9 @@ async function main() {
     console.log(`   ID: ${me.data.id}\n`);
 
     // Test tweet at
-    const testText = `🧪 AutoSocial sistem testi — ${new Date().toISOString()}
+    const testText = `🧪 TeknoFiltre sistem bağlantı testi — ${new Date().toLocaleTimeString('tr-TR')}
 
-Bu tweet otomatik sistem testi için atılmıştır. Lütfen silin.
-
-#AutoSocial #Test`;
+Bu tweet API entegrasyon testi için atılmıştır.`;
 
     console.log('📤 Test tweet atılıyor...');
     const tweet = await twitterClient.v2.tweet({ text: testText });

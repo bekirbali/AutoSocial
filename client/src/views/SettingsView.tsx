@@ -83,7 +83,7 @@ export const SettingsView: React.FC = () => {
           Sistem Mimarisi & Kaynak Yönetimi
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          DonanımPost otonom haber kaynakları, puanlama anahtar kelimeleri ve sistem parametreleri.
+          TeknoFiltre otonom haber kaynakları, puanlama anahtar kelimeleri ve sistem parametreleri.
         </p>
       </div>
 
@@ -163,7 +163,7 @@ export const SettingsView: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
             <span className="text-[11px] font-semibold text-slate-400 uppercase">Resmi Marka</span>
-            <div className="text-sm font-bold text-white mt-1">DonanımPost</div>
+            <div className="text-sm font-bold text-white mt-1">TeknoFiltre</div>
             <p className="text-[11px] text-slate-500 mt-1">
               Tüm görsel, kart ve video şablonlarında tek isimdir.
             </p>

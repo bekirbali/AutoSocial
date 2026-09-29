@@ -121,7 +121,7 @@ export const App: React.FC = () => {
       <footer className="border-t border-slate-900 bg-slate-950/60 py-4 px-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            <b>DonanımPost</b> • Otonom Teknoloji Haberciliği & Sosyal Medya Motoru
+            <b>TeknoFiltre</b> • Otonom Teknoloji Haberciliği & Sosyal Medya Motoru
           </span>
           <span className="text-[11px] text-slate-600">
             PostgreSQL • Redis • BullMQ • Sharp 16:9 • FFmpeg Reels • Gemini Flash

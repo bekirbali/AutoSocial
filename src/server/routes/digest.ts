@@ -12,7 +12,8 @@ import { getTurkishHeadline, publishDigest, getDigestCutoffTime } from '../../mo
 import { generateDigestSlideCard } from '../../modules/processor/image.js';
 import type { ArticleCategory } from '../../config/keywords.js';
 import { generateDigestReel } from '../../modules/processor/digestGenerator.js';
-import { generateDigestCaption } from '../../modules/processor/ai.js';
+import { generateDigestCaption, generateReelsDigestScript } from '../../modules/processor/ai.js';
+import { generateSegmentedVoiceoverWithSubtitles } from '../../modules/processor/ttsService.js';
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import path from 'path';
@@ -234,7 +235,51 @@ digestRouter.post('/compose', async (req, res): Promise<void> => {
     const digestId = crypto.randomUUID();
     const outputVideoPath = path.join(videoOutputDir, `digest_${digestId}.mp4`);
 
-    await generateDigestReel(slideImages, outputVideoPath);
+    // 3. AI Spiker Metni ve Segmentli TTS Seslendirme + Karaoke Altyazı
+    let voiceoverAudioPath: string | undefined;
+    let subtitlesPath: string | undefined;
+    let slideDurations: number[] | undefined;
+    let totalDurationSeconds: number | undefined;
+
+    try {
+      const reelsScript = await generateReelsDigestScript(
+        orderedArticles.map((c) => ({
+          title: getTurkishHeadline(c),
+          category: c.category ?? undefined,
+          sourceName: c.sourceName ?? undefined,
+          tweetText: c.tweetText,
+        })),
+      );
+
+      // Her slayt için tam segment metni hazırla.
+      // Outro metnini son haberin slaytına iliştir ki son slayt ekrandayken outro da tamamlansın.
+      const segments = reelsScript.segments.map((s, idx) => {
+        const isLast = idx === reelsScript.segments.length - 1;
+        const text = isLast && reelsScript.outroScript
+          ? `${s.script} ${reelsScript.outroScript}`
+          : s.script;
+        return { text, articleIndex: s.articleIndex };
+      });
+
+      const ttsResult = await generateSegmentedVoiceoverWithSubtitles(segments, {
+        baseFileName: `voice_${digestId}`,
+        wordsPerCue: 3,
+      });
+
+      voiceoverAudioPath = ttsResult.masterAudioPath;
+      subtitlesPath = ttsResult.masterAssPath; // Gerçek sarı boyamalı Karaoke ASS
+      slideDurations = ttsResult.slideDurations; // Her slayt için tam seslendirme süresi
+      totalDurationSeconds = ttsResult.totalDurationSeconds;
+    } catch (ttsErr: any) {
+      log.warn({ err: ttsErr.message }, 'Segmentli TTS veya Karaoke altyazı üretilemedi, standart müzikli video derlenecek');
+    }
+
+    await generateDigestReel(slideImages, outputVideoPath, {
+      voiceoverAudioPath,
+      subtitlesPath,
+      slideDurations,
+      totalDurationSeconds,
+    });
 
     // 4. Gemini ile Instagram Açıklaması Üret
     const caption = await generateDigestCaption(

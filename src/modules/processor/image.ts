@@ -174,12 +174,7 @@ export async function generateDigestSlideCard(
     downloadedImageBuffer = resolved.buffer;
   }
 
-  const badgePrefix =
-    digestType === 'noon'
-      ? 'ÖĞLE BÜLTENİ'
-      : digestType === 'evening'
-      ? 'AKŞAM BÜLTENİ'
-      : 'GÜNÜN ÖZETİ';
+  const badgePrefix = 'GÜNÜN RAPORU';
   const badgeText = `${badgePrefix} • ${slideIndex}/${totalSlides}`;
 
   if (downloadedImageBuffer) {
@@ -292,11 +287,11 @@ function buildReelsOverlaySvg(
     </linearGradient>
   </defs>
 
-  <!-- Üst Güvenli Alan: Rozet (Sol) ve DonanımPost (Sağ) -->
+  <!-- Üst Güvenli Alan: Rozet (Sol) ve TeknoFiltre (Sağ) -->
   <rect x="80" y="${topSafeY}" width="${badgeWidth}" height="52" rx="14" fill="${badgeText ? accentColor : 'white'}" fill-opacity="${badgeText ? '0.9' : '0.18'}" />
   <text x="102" y="${topSafeY + 35}" font-family="'Segoe UI', Arial, sans-serif" font-size="22" font-weight="800" fill="white">${topBadge}</text>
 
-  <text x="${width - 80}" y="${topSafeY + 36}" text-anchor="end" font-family="'Segoe UI', Arial, sans-serif" font-size="26" font-weight="800" fill="white" fill-opacity="0.9" letter-spacing="1">DonanımPost</text>
+  <text x="${width - 80}" y="${topSafeY + 36}" text-anchor="end" font-family="'Segoe UI', Arial, sans-serif" font-size="26" font-weight="800" fill="white" fill-opacity="0.9" letter-spacing="1">TeknoFiltre</text>
 
   <!-- Sol vurgulu çizgi -->
   <rect x="56" y="${textYStart - 44}" width="8" height="${titleLines.length * titleLineHeight}" rx="4" fill="${accentColor}" />
@@ -370,11 +365,11 @@ function buildReelsTemplateSvg(
   <circle cx="${width * 0.85}" cy="${height * 0.25}" r="320" fill="white" fill-opacity="0.04"/>
   <circle cx="${width * 0.15}" cy="${height * 0.65}" r="280" fill="white" fill-opacity="0.03"/>
 
-  <!-- Üst Güvenli Alan: Rozet (Sol) ve DonanımPost (Sağ) -->
+  <!-- Üst Güvenli Alan: Rozet (Sol) ve TeknoFiltre (Sağ) -->
   <rect x="80" y="${topSafeY}" width="${badgeWidth}" height="52" rx="14" fill="white" fill-opacity="0.22" />
   <text x="102" y="${topSafeY + 35}" font-family="'Segoe UI', Arial, sans-serif" font-size="22" font-weight="800" fill="white">${topBadge}</text>
 
-  <text x="${width - 80}" y="${topSafeY + 36}" text-anchor="end" font-family="'Segoe UI', Arial, sans-serif" font-size="26" font-weight="800" fill="white" fill-opacity="0.9" letter-spacing="1">DonanımPost</text>
+  <text x="${width - 80}" y="${topSafeY + 36}" text-anchor="end" font-family="'Segoe UI', Arial, sans-serif" font-size="26" font-weight="800" fill="white" fill-opacity="0.9" letter-spacing="1">TeknoFiltre</text>
 
   <!-- Sol vurgulu çizgi -->
   <rect x="56" y="${titleYStart - 50}" width="8" height="${titleLines.length * titleLineHeight}" rx="4" fill="white" fill-opacity="0.8" />
@@ -391,12 +386,13 @@ function buildReelsTemplateSvg(
 }
 
 /**
- * SVG tabanlı görsel template üret (X / Twitter 16:9 ve diğerleri için)
+ * X (Twitter) 16:9 için modern, temiz, kanca odaklı SVG kart katmanı
+ * Uzun açıklamalar kaldırılmıştır; sadece dev 3-5 kelimelik kanca ve TeknoFiltre marka rozeti yer alır.
  */
 function buildGradientSvg(
   fromColor: string,
   toColor: string,
-  title: string,
+  titleOrHook: string,
   sourceName: string,
   category: ArticleCategory,
   publishedAt: Date,
@@ -405,95 +401,71 @@ function buildGradientSvg(
   format: ImageFormat,
   transparentBg: boolean = false,
 ): string {
-  let charsPerLine = 45;
-  let titleFontSize = 36;
-  let titleLineHeight = 48;
-  let titleBaseY = height - 195;
-  let textX = 60;
+  // Kanca için satır başına düşen karakter sayısı ve font büyüklüğü
+  const charsPerLine = format === '4:5' ? 22 : 28;
+  const hookFontSize = format === '4:5' ? 62 : 54;
+  const hookLineHeight = format === '4:5' ? 76 : 66;
+  const textX = 64;
 
-  if (format === '4:5') {
-    charsPerLine = 35;
-    titleFontSize = 52;
-    titleLineHeight = 68;
-    titleBaseY = height - 150;
-    textX = 80;
-  }
-
-  const safeTitle = escapeXml(wrapText(title, charsPerLine));
+  const safeHook = escapeXml(wrapText(titleOrHook, charsPerLine));
   const safeSource = escapeXml(sourceName);
-  const dateStr = publishedAt.toLocaleDateString('tr-TR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  const safeDateStr = escapeXml(dateStr);
 
-  // Başlığı satırlara böl
-  const titleLines = safeTitle.split('\n');
-  const titleYStart = titleBaseY - titleLines.length * titleLineHeight;
+  // Kancayı satırlara böl
+  const hookLines = safeHook.split('\n').slice(0, 2); // Maksimum 2 satır
+  const hookYStart = height - (hookLines.length === 1 ? 95 : 145);
 
-  const titleSvg = titleLines
+  const hookSvg = hookLines
     .map(
       (line, i) =>
-        `<text x="${textX}" y="${titleYStart + i * titleLineHeight}" font-family="'Segoe UI', Arial, sans-serif" font-size="${titleFontSize}" font-weight="700" fill="white" letter-spacing="-0.5">${line}</text>`,
+        `<text x="${textX}" y="${hookYStart + i * hookLineHeight}" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="${hookFontSize}" font-weight="900" fill="white" letter-spacing="-1" filter="url(#textShadow)">${line}</text>`,
     )
     .join('\n');
 
-  const circleR1 = format === '4:5' ? 300 : 200;
-  const circleR2 = format === '4:5' ? 250 : 150;
-  const sourceY = format === '4:5' ? 36 : 24;
-  const sourceHeight = format === '4:5' ? 54 : 42;
-  const sourceFontSize = format === '4:5' ? 24 : 18;
-  const bottomBarY = height - (format === '4:5' ? 80 : 55);
-  const bottomBarHeight = format === '4:5' ? 80 : 55;
+  const sourceBadgeWidth = Math.min(safeSource.length * 12 + 40, 260);
 
   return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <!-- Arka plan ana gradient (Sadece görsel bulunamazsa acil fallback olarak) -->
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:${fromColor};stop-opacity:1" />
       <stop offset="100%" style="stop-color:${toColor};stop-opacity:1" />
     </linearGradient>
-    <linearGradient id="overlay" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:transparent;stop-opacity:0" />
-      <stop offset="60%" style="stop-color:#000000;stop-opacity:0.75" />
-      <stop offset="100%" style="stop-color:#000000;stop-opacity:0.95" />
+
+    <!-- Sinematik alt karartma overlay (Sadece alt kancanın okunabilirliği için; ürün görselini karartmaz) -->
+    <linearGradient id="bottomFade" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#020617;stop-opacity:0" />
+      <stop offset="35%" style="stop-color:#020617;stop-opacity:0.35" />
+      <stop offset="70%" style="stop-color:#020617;stop-opacity:0.75" />
+      <stop offset="100%" style="stop-color:#020617;stop-opacity:0.92" />
     </linearGradient>
+
+    <!-- Kanca metni için profesyonel gölge filtresi -->
+    <filter id="textShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000000" flood-opacity="0.85"/>
+    </filter>
   </defs>
 
-  <!-- Arka plan gradient veya hafif karartma -->
-  ${transparentBg ? `<rect width="${width}" height="${height}" fill="rgba(0,0,0,0.4)" />` : `<rect width="${width}" height="${height}" fill="url(#bg)" />`}
+  <!-- Arka plan: Gerçek görsel varsa hiçbir düz/karartıcı katman konmaz -->
+  ${transparentBg ? '' : `<rect width="${width}" height="${height}" fill="url(#bg)" />`}
 
-  <!-- Dekoratif desen — subtle grid lines -->
-  ${!transparentBg ? `
-  <line x1="0" y1="0" x2="${width}" y2="${height}" stroke="white" stroke-opacity="0.03" stroke-width="1"/>
-  <line x1="${width}" y1="0" x2="0" y2="${height}" stroke="white" stroke-opacity="0.03" stroke-width="1"/>
-  <circle cx="${width * 0.8}" cy="${height * 0.2}" r="${circleR1}" fill="white" fill-opacity="0.03"/>
-  <circle cx="${width * 0.1}" cy="${height * 0.8}" r="${circleR2}" fill="white" fill-opacity="0.02"/>
-  ` : ''}
+  <!-- Sinematik Alt Karartma (Sadece görselin alt %50'lik kanca alanında devreye girer) -->
+  <rect x="0" y="${height * 0.48}" width="${width}" height="${height * 0.52}" fill="url(#bottomFade)" />
 
-  <!-- Overlay gradient (alt karartma) -->
-  <rect width="${width}" height="${height}" fill="url(#overlay)" />
+  <!-- Sol Üst: TeknoFiltre Minimal Rozeti -->
+  <g transform="translate(60, 44)">
+    <rect width="180" height="46" rx="23" fill="#0f172a" fill-opacity="0.82" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+    <circle cx="24" cy="23" r="6" fill="#06b6d4" />
+    <text x="40" y="30" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="20" font-weight="800" fill="white" letter-spacing="0.5">TeknoFiltre</text>
+  </g>
 
-  <!-- Sol kenar vurgu çizgisi -->
-  <rect x="0" y="0" width="${format === '16:9' ? 5 : 8}" height="${height}" fill="white" fill-opacity="0.8" />
+  <!-- Sağ Üst: Kaynak Etiketi (Subtle) -->
+  <g transform="translate(${width - 60 - sourceBadgeWidth}, 44)">
+    <rect width="${sourceBadgeWidth}" height="46" rx="23" fill="#0f172a" fill-opacity="0.65" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+    <text x="${sourceBadgeWidth / 2}" y="29" text-anchor="middle" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="17" font-weight="600" fill="#cbd5e1">${safeSource}</text>
+  </g>
 
-  <!-- Kaynak etiketi (sol üst) -->
-  <rect x="${textX}" y="${sourceY}" width="${Math.min(safeSource.length * (format === '4:5' ? 16 : 11) + 48, 450)}" height="${sourceHeight}" rx="10" fill="white" fill-opacity="0.18" />
-  <text x="${textX + 24}" y="${sourceY + (format === '4:5' ? 36 : 28)}" font-family="'Segoe UI', Arial, sans-serif" font-size="${sourceFontSize}" font-weight="600" fill="white">${safeSource}</text>
-
-  <!-- Haber başlığı (alt orta) -->
-  ${titleSvg}
-
-  <!-- Alt bilgi çubuğu -->
-  <rect x="0" y="${bottomBarY}" width="${width}" height="${bottomBarHeight}" fill="black" fill-opacity="0.6" />
-
-  <!-- Tarih (alt sol) -->
-  <text x="${textX}" y="${bottomBarY + (format === '4:5' ? 48 : 34)}" font-family="'Segoe UI', Arial, sans-serif" font-size="${format === '4:5' ? 22 : 16}" fill="#a0a0a0">${safeDateStr}</text>
-
-  <!-- DonanımPost brand (alt sağ) -->
-  <text x="${width - textX}" y="${bottomBarY + (format === '4:5' ? 48 : 34)}" text-anchor="end" font-family="'Segoe UI', Arial, sans-serif" font-size="${format === '4:5' ? 24 : 16}" font-weight="700" fill="#a0a0a0">DonanımPost</text>
+  <!-- Alt Vurucu Kanca (Büyük, Kalın, Paragrafsız) -->
+  ${hookSvg}
 </svg>`;
 }
 

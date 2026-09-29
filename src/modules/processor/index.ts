@@ -5,9 +5,8 @@ import { createLogger } from '../../lib/logger.js';
 import { isDuplicate, markAsProcessed, hasSimilarTitle } from './dedup.js';
 import { filterArticle } from './filter.js';
 import { scoreArticle } from './scorer.js';
-import { generateTweet, generateInstagramCaption } from './ai.js';
+import { generateTweet } from './ai.js';
 import { generateNewsCard } from './image.js';
-import { generateReelVideo } from './reelGenerator.js';
 import { downloadVideo } from './mediaDownloader.js';
 import { extractOpenGraphImage, resolveHighResImage } from './downloader.js';
 import { hashUrl } from './dedup.js';
@@ -122,19 +121,21 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
       videoPath
     );
 
-    let igResult = null;
-    if (env.ENABLE_INSTAGRAM) {
-      igResult = await generateInstagramCaption(
-        item.title,
-        item.summary,
-        item.sourceName,
-        category,
-        videoPath
-      ).catch(e => {
-        log.warn({ err: e.message }, 'Instagram caption üretilemedi, null atanacak');
-        return null;
-      });
+    // Tüketici etki puanı kontrolü: Tüketiciye/cebe doğrudan etkisi 7'nin altındaysa elenir
+    if (tweetResult.impactScore < 7) {
+      await markAsProcessed(item.url);
+      log.info(
+        { ...logCtx, impactScore: tweetResult.impactScore, reason: tweetResult.impactReason },
+        'Tüketici etki puanı eşik altında (< 7), onay kuyruğuna alınmıyor',
+      );
+      return {
+        url: item.url,
+        status: 'low_score',
+        reason: `impact:${tweetResult.impactScore}`,
+        score: scoreBreakdown.total,
+      };
     }
+
 
     // ─── ADIM 8: Görsel ve Video (Reels) Üretimi ─────────────────────────────
     let imagePath: string | undefined;
@@ -155,9 +156,9 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
           .catch((e) => log.warn({ err: e.message }, 'rawArticles imageUrl güncellenemedi'));
       }
 
-      // X (Twitter) için 16:9 görsel
+      // X (Twitter) için 16:9 görsel (Temiz, dev kancalı)
       const imageResult16x9 = await generateNewsCard(
-        tweetResult.translatedTitle,
+        tweetResult.imageHook || tweetResult.translatedTitle,
         item.sourceName,
         category,
         item.publishedAt,
@@ -170,36 +171,7 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
       imagePath = imageResult16x9.imagePath;
       imageSource = imageResult16x9.imageSource;
 
-      // Instagram için 9:16 kart üret ve 6 saniyelik dinamik Reels videosu oluştur
-      if (env.ENABLE_INSTAGRAM && !videoPath) {
-        // 1. 9:16 dikey kart üret
-        const imageResult9x16 = await generateNewsCard(
-          tweetResult.translatedTitle,
-          item.sourceName,
-          category,
-          item.publishedAt,
-          rawArticle.id,
-          '9:16',
-          item.imageUrl,
-          resolvedImage.buffer,
-          item.url,
-        );
 
-        // 2. FFmpeg ile 6 saniyelik Ken Burns + müzikli Reels videosu üret
-        const videoOutputDir = path.join(process.cwd(), 'output', 'videos');
-        if (!existsSync(videoOutputDir)) {
-          await mkdir(videoOutputDir, { recursive: true });
-        }
-
-        const reelVideoPath = path.join(videoOutputDir, `${rawArticle.id}_reel.mp4`);
-        try {
-          await generateReelVideo(imageResult9x16.imagePath, reelVideoPath, { durationSeconds: 6 });
-          videoPath = reelVideoPath;
-          log.info({ reelVideoPath }, '🎬 Instagram Reels videosu üretildi');
-        } catch (reelErr: any) {
-          log.warn({ err: reelErr.message }, 'Reels videosu üretilemedi, statik görsel kullanılacak');
-        }
-      }
     } catch (imgErr) {
       log.warn(
         { err: imgErr instanceof Error ? imgErr.message : imgErr, url: item.url },
@@ -217,7 +189,7 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
       translatedTitle: tweetResult.translatedTitle,
       hashtags: tweetResult.hashtags,
       threadTweets: tweetResult.threadTweets,
-      instagramCaption: igResult?.caption,
+      instagramCaption: null,
       imagePath,
       videoPath,
       imageSource,
