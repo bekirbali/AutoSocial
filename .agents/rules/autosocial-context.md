@@ -28,16 +28,13 @@ Telegram bot üzerinden hibrit onay akışıyla X (Twitter) ve Instagram'a yayı
 
 ### Görsel ve Video Stratejisi: Temiz X Kartı + Instagram AI Sesli Reels & Carousel
 - **X (Twitter) Görseli:** 16:9 formatında (`1200x675`). Görsel üzerinde uzun paragraf veya metin kutuları **YASAKTIR**. Orijinal ürün görseli üzerine hafif gradient, sol üste minimal "TeknoFiltre" etiketi ve alt üçte bire sadece **3-5 kelimelik vurucu kanca (hook)** basılır.
-- **X (Twitter) Tweet Formatı (Doğal İnsan / Editör Dili):**
+- **X (Twitter) Tweet Formatı (Tam Olarak 2 Paragraf - Doğal Editör Dili):**
   ```text
-  [Vurucu Kanca - Akışı durduran merak uyandırıcı 1 cümle]
-  
-  [Haberin hap özeti - Somut verilerle 1-2 cümle]
-  
-  [Cebe/Geleceğe Etkisi - "Bu da pratikte...", "Kısacası bu gelişme..." gibi doğal bağlaçlı insan yorumu]
-  
-  [Okuyucuyu yorum yapmaya davet eden samimi soru cümlesi]
+  [1. Paragraf: Vurucu Kanca - Akışı durduran, merak uyandıran tek cümlelik tespit]
+
+  [2. Paragraf: Detay ve Etki - Somut verilerle haberin ne olduğu ve tüketiciye/kullanıcıya etkisi. İsteğe göre samimi bir soru veya net bir kişisel yorumla biter]
   ```
+  "Kısacası", "Yani özetle", "Bu da pratikte", "Özetle" gibi yapay zeka bağlaçları KESİNLİKLE YASAKTIR.
   "💡", "💬", "Cebe Etkisi:", "Bizim Yorumumuz:" gibi yapay zeka klişesi etiket ve emojiler KESİNLİKLE KULLANILMAZ.
   Hashtag ve flood/thread KULLANILMAZ. Günde maksimum 6–7 seçilmiş tweet atılır.
 - **Instagram Reels (AI Seslendirme + Dinamik Altyazı):**

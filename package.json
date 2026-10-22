@@ -1,7 +1,7 @@
 {
   "name": "autosocial",
   "version": "1.0.0",
-  "description": "Automated PC hardware news → Turkish tweets pipeline",
+  "description": "Automated PC hardware news -> Turkish tweets pipeline",
   "main": "dist/main.js",
   "scripts": {
     "dev": "chcp 65001 >NUL && tsx watch --exclude output src/main.ts",
@@ -26,6 +26,7 @@
     "cheerio": "^1.0.0",
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
+    "drizzle-kit": "^0.30.1",
     "drizzle-orm": "^0.38.3",
     "express": "^5.2.1",
     "ioredis": "^5.4.2",
@@ -44,8 +45,9 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.10.2",
-    "drizzle-kit": "^0.30.1",
-    "tsx": "^4.19.2",
+    "gsap": "^3.15.0",
+    "puppeteer-core": "^25.12.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2"
   },
   "engines": {

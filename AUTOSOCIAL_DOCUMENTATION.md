@@ -5,7 +5,7 @@ Bu belge, **AutoSocial** projesinin güncel (Faz 3 tamamlanmış) durumunu eksik
 ---
 
 ## 1. Proje Özeti ve Amacı
-**AutoSocial**, teknoloji ve donanım haberlerini (ileride genişletilebilir) RSS kaynaklarından otomatik olarak çeken, bu haberleri yapay zeka (Gemini 1.5) ile özetleyip sosyal medya formatına (X/Twitter ve Instagram) uygun hale getiren ve bir **Telegram Botu üzerinden insan onayı (hibrit mod)** aldıktan sonra otomatik olarak yayınlayan uçtan uca bir otomasyon sistemidir.
+**AutoSocial**, teknoloji ve donanım haberlerini (ileride genişletilebilir) RSS kaynaklarından otomatik olarak çeken, bu haberleri yapay zeka (Gemini 3.6) ile özetleyip sosyal medya formatına (X/Twitter ve Instagram) uygun hale getiren ve bir **Telegram Botu üzerinden insan onayı (hibrit mod)** aldıktan sonra otomatik olarak yayınlayan uçtan uca bir otomasyon sistemidir.
 
 **Temel Hedefler:**
 - Tamamen otonom veya yarı otonom (onaylı) içerik üretimi.
@@ -22,7 +22,7 @@ Proje modern, tip güvenli (type-safe) ve ölçeklenebilir bir Node.js mimarisi 
 *   **Veritabanı:** PostgreSQL. (İlişkisel verilerin tutulması, sağlam transaction yönetimi için).
 *   **ORM:** Drizzle ORM (`drizzle-orm`, `drizzle-kit`). (Prisma'ya göre çok daha hafif, SQL'e daha yakın ve hızlı olduğu için tercih edildi).
 *   **Kuyruk Sistemi (Queue):** Redis & BullMQ. (Zamanlanmış görevler (cron), asenkron işlemler ve hatalı işlemlerin tekrarı (retry/idempotency) için kusursuz bir mimari sunuyor).
-*   **Yapay Zeka:** `@google/generative-ai` (Gemini 1.5 Flash). (Maliyet/performans oranı çok yüksek olduğu, hızlı çalıştığı ve büyük bağlam pencereleri sunduğu için).
+*   **Yapay Zeka:** `@google/generative-ai` (Gemini 3.6 Flash). (Maliyet/performans oranı çok yüksek olduğu, hızlı çalıştığı ve büyük bağlam pencereleri sunduğu için).
 *   **Görsel Üretimi:** `sharp`. (API kullanım sözleşmelerine (ToS) takılmamak için dış servisler (Unsplash vb.) iptal edildi. Sharp ile milisaniyeler içinde Node.js üzerinde özel gradient arka planlı, logolu metin görselleri üretiliyor).
 *   **Bot Entegrasyonu:** `telegraf`. (Telegram Bot API'sini Node.js'de kullanmanın en modern ve stabil yolu).
 *   **Sosyal Medya API'leri:** 

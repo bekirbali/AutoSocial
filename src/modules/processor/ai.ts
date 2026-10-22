@@ -9,7 +9,7 @@ const log = createLogger('processor:ai');
 // Gemini istemcisi — modüle yüklendiğinde bir kez başlatılır
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite' });
 
 export interface TweetGenerationResult {
   tweetText: string;
@@ -78,28 +78,28 @@ export async function generateTweet(
   const guide = CATEGORY_GUIDES[category] || CATEGORY_GUIDES.general;
   const sourceInfo = summary ? `\n\nİçerik Detayları: ${summary.substring(0, 450)}` : '';
 
-  const prompt = `Sen "TeknoFiltre" markasının kurucusu, bağımsız, samimi ve işi çok iyi bilen kıdemli bir teknoloji editörüsün. Sloganın: "Gereksizi eliyorum, ne işe yarar onu yazıyorum."
+  const prompt = `Sen "TeknoFiltre" markasının kurucusu, bağımsız, samimi ve donanım/teknoloji dünyasını çok iyi bilen kıdemli bir teknoloji editörüsün. Sloganın: "Gereksizi eliyorum, ne işe yarar onu yazıyorum."
 
-GÖREV: Aşağıdaki içeriği analiz et ve X'te (Twitter) kesinlikle yapay zeka kokmayan, sanki işi bilen bir insan editör yazmış gibi duran, yüksek etkileşimli 4 paragraflı bir tweet hazırla.
+GÖREV: Aşağıdaki içeriği analiz et ve X'te (Twitter) kesinlikle yapay zeka kokmayan, sanki işi bilen bir insan editör yazmış gibi duran, yüksek etkileşimli TAM OLARAK 2 PARAGRAFLI bir tweet hazırla.
 
 HABER BAŞLIĞI: ${title}
 KAYNAK: ${sourceName}${sourceInfo}
 KATEGORİ ODAĞI: ${guide.angle} (${guide.hookHint})
 
 KRİTİK FORMAT VE ÜSLUP KURALLARI:
-Tweet tam olarak şu 4 bloktan (paragraftan) oluşmalı ve bloklar arasında mutlaka boşluk (\\n\\n) bulunmalıdır:
+Tweet istisnasız ve tam olarak 2 PARAGRAFTAN oluşmalı, iki paragraf arasında tek bir satır boşluk (\n\n) bulunmalıdır:
 
-1. VURUCU KANCA (Tek Satır): Akışta kaydırmayı anında durduran, merak uyandıran çarpıcı bir cümle veya tespit.
-2. HABERİN ÖZÜ (1-2 Cümle): Ne olduğunu somut verilerle (fiyat, FPS, watt, çekirdek, mimari) doğrudan anlat. Kuru ajans dilini ("açıklandı", "duyuruldu", "bildirildi") ASLA KULLANMA.
-3. TÜKETİCİ / CEBE ETKİSİ (Doğal İnsan Cümlesi): Bu gelişmenin sıradan bir teknoloji meraklısının cebine, sistemine veya satın alma kararına etkisini anlat.
-   - ÇOK ÖNEMLİ KURAL: "💡", "Cebe Etkisi:", "Bizim Yorumumuz:" gibi yapay zeka etiketleri KESİNLİKLE YASAKTIR.
-   - Bunun yerine cümleye bir insan editör gibi doğal bağlaçlarla başla: "Bu da pratikte...", "Yani özetle...", "Kısacası bu gelişme...", "Bu yeni kart almadan...", "Bu durum cebimiz için..." gibi akıcı konuşma dili kullan.
-4. TARTIŞMA ÇAĞRISI (Doğal Soru): Okuyucuyu yorum yapmaya davet eden samimi bir soru cümlesi.
-   - ÇOK ÖNEMLİ KURAL: "💬" veya benzeri robotik emojiler KULLANMA. Doğrudan soru cümlesini yaz (Örn: "Sizce bu fiyata değer mi?", "Sizce Nvidia bu hamleye izin verir mi?").
+1. PARAGRAF - VURUCU KANCA (Tek Cümle):
+Akışta kaydırmayı anında durduran, merak uyandıran veya ezber bozan tek cümlelik çarpıcı bir tespit / kanca.
 
-KESİN YASAKLAR VE SINIRLAR:
-- EMOJİ KİRLİLİĞİ KESİNLİKLE YASAKTIR: Metin içinde "💡", "💬", "👇", "🚀" gibi yapay zeka klişesi emojileri KULLANMA. Metin tamamen doğal insan yazısı gibi durmalıdır.
-- ETİKET YASAKTIR: "Cebe Etkisi:", "Özet:", "Yorum:" gibi başlık kalıpları yazma.
+2. PARAGRAF - DETAY VE ETKİ AÇIKLAMASI (Kısa & Doğal Anlatım):
+Haberin ne olduğunu (somut verilerle: model, fiyat, FPS, watt vb.) ve son kullanıcıya / tüketiciye ne getirdiğini tek bir akıcı metin olarak özetle. Kuru ajans dilini ("duyuruldu", "açıklandı") KESİNLİKLE KULLANMA. İsteğe göre cümlenin sonunu samimi ve doğal bir soruyla veya net bir kişisel yorumla bağlayabilirsin.
+
+KESİN YASAKLAR (YAPAY ZEKA VE KALIP YASAKLARI):
+- YAPAY BAĞLAÇLAR KESİNLİKLE YASAKTIR: "Kısacası", "Yani özetle", "Bu da pratikte", "Özetle", "Sonuç olarak", "Bu durum", "Bu gelişme" gibi yapay zeka kalıplarını ASLA KULLANMA. Cümleye doğrudan, organik ve insan gibi gir.
+- EMOJİ KİRLİLİĞİ VE İKONLAR YASAKTIR: Metin içinde "💡", "💬", "👇", "🚀", "⚡️" gibi robotik yapay zeka emojileri KULLANMA. Metin tamamen doğal insan yazısı gibi durmalıdır.
+- ETİKET YASAKTIR: "Cebe Etkisi:", "Özet:", "Yorum:", "Haber:" gibi başlık kalıpları yazma.
+- PARAGRAF SINIRI: Metin kesinlikle 3 veya 4 paragrafa bölünmemeli, tam olarak 2 paragraf olmalıdır.
 - KARAKTER SINIRI: Tweet maksimum 270 karakter olmalıdır.
 - HASHTAG KESİNLİKLE YASAKTIR (# sembolü kullanma).
 - THREAD/FLOOD YASAKTIR ("detaylar aşağıda", "devamı yorumda" gibi kalıplar yasaktır).
@@ -108,7 +108,7 @@ KESİN YASAKLAR VE SINIRLAR:
 
 ÇIKTI FORMATI (YALNIZCA GEÇERLİ JSON):
 {
-  "tweetText": "[Kanca]\\n\\n[Haber Özeti]\\n\\n[Doğal dille cebe/işe etkisi]\\n\\n[Doğal tartışma sorusu]",
+  "tweetText": "[Vurucu Kanca]\n\n[Detay, etki ve doğal kapanışı içeren açıklama paragrafı]",
   "imageHook": "En fazla 3-5 kelimelik dev kanca",
   "translatedTitle": "Kısa Türkçe başlık (maks 55 karakter)",
   "impactScore": 8,
@@ -165,7 +165,8 @@ Sadece JSON döndür.`;
     // Robotik etiket ve emoji kaçaklarını temizle
     tweetText = tweetText
       .replace(/[💡💬📌🚀⚡️]/g, '')
-      .replace(/\s*(Bizim Yorumumuz|Cebe Etkisi):\s*/gi, ' ')
+      .replace(/\s*(Bizim Yorumumuz|Cebe Etkisi|Özet|Yorum):\s*/gi, ' ')
+      .replace(/\b(kısacası|yani özetle|bu da pratikte|özetle)\b[,:]?\s*/gi, '')
       .replace(/\s*detaylar\s+(zincirde|aşağıda|flood'da|yorumda|yorumlarda)[.!?\s👇]*/gi, '')
       .replace(/\s*devamı\s+(zincirde|aşağıda|flood'da|yorumda|yorumlarda)[.!?\s👇]*/gi, '')
       .replace(/\n{3,}/g, '\n\n')
