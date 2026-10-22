@@ -7,15 +7,19 @@ ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN npm install -g pnpm@9.15.0
 
-# FFmpeg, FFprobe ve Türkçe/Latin karakter destekli font paketleri
+# FFmpeg, FFprobe, Python3 ve Türkçe/Latin karakter destekli font paketleri
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    python3 \
+    python-is-python3 \
     fontconfig \
     fonts-dejavu-core \
     fonts-freefont-ttf \
     fonts-liberation \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+ENV YOUTUBE_DL_SKIP_PYTHON_CHECK="1"
 
 WORKDIR /app
 
