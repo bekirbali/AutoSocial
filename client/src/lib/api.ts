@@ -160,3 +160,14 @@ export async function toggleXManualMode(enabled: boolean): Promise<boolean> {
   return json.xManualMode;
 }
 
+export async function updateDynamicSettings(settings: Record<string, any>): Promise<any> {
+  const res = await fetch(`${API_BASE}/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Ayarlar güncellenemedi');
+  return json.settings;
+}
+

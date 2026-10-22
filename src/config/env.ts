@@ -41,8 +41,7 @@ const EnvSchema = z.object({
 
   // Sistem Ayarları
   MAX_TWEETS_PER_DAY: z.coerce.number().int().min(1).max(50).default(15),
-  MIN_TWEETS_PER_DAY: z.coerce.number().int().min(1).default(8),
-  MIN_SCORE_THRESHOLD: z.coerce.number().min(0).max(100).default(90),
+  MIN_SCORE_THRESHOLD: z.coerce.number().min(0).max(100).default(75),
   FETCH_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(15),
   ANALYTICS_FETCH_INTERVAL_HOURS: z.coerce.number().int().min(1).default(6),
 

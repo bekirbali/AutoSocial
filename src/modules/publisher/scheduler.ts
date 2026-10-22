@@ -4,6 +4,7 @@ import { eq, and, lte, gte, count } from 'drizzle-orm';
 import { createLogger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { checkRateLimit } from './twitter.js';
+import { getDynamicSetting } from '../../lib/settings.js';
 
 const log = createLogger('publisher:scheduler');
 
@@ -25,18 +26,14 @@ const MIN_INTERVAL_MINUTES = 30;
  * Bugün için yayın planı oluştur
  * @returns Yayın zamanları (UTC Date dizisi)
  */
-export function generateDailySchedule(date: Date = new Date()): Date[] {
+export function generateDailySchedule(date: Date = new Date(), maxTweetsCount?: number): Date[] {
   const dayOfWeek = date.getDay(); // 0=Pazar, 6=Cumartesi
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-  let maxTweets = env.MAX_TWEETS_PER_DAY;
+  let maxTweets = maxTweetsCount ?? env.MAX_TWEETS_PER_DAY;
   if (isWeekend) {
     maxTweets = Math.floor(maxTweets * WEEKEND_REDUCTION);
   }
-
-  const minTweets = isWeekend
-    ? Math.floor(env.MIN_TWEETS_PER_DAY * WEEKEND_REDUCTION)
-    : env.MIN_TWEETS_PER_DAY;
 
   // Her dilime eşit dağıt
   const slotsCount = TWEET_SLOTS.length;
@@ -76,7 +73,6 @@ export function generateDailySchedule(date: Date = new Date()): Date[] {
       date: date.toLocaleDateString('tr-TR'),
       isWeekend,
       count: finalTimes.length,
-      minTweets,
       maxTweets,
     },
     'Günlük yayın planı oluşturuldu',
@@ -127,7 +123,8 @@ export async function getNextPublishTime(): Promise<{
 
   // Günlük limit kontrolü
   const todayCount = await getTodayPublishedCount();
-  if (todayCount >= env.MAX_TWEETS_PER_DAY) {
+  const maxTweets = await getDynamicSetting('max_tweets_per_day', env.MAX_TWEETS_PER_DAY);
+  if (todayCount >= maxTweets) {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(12, 0, 0, 0);

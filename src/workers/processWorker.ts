@@ -15,6 +15,7 @@ import { sendApprovalRequest } from '../modules/telegram/bot.js';
 import { db } from '../db/index.js';
 import { processedArticles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { getDynamicSetting } from '../lib/settings.js';
 
 const log = createLogger('worker:process');
 
@@ -69,18 +70,31 @@ async function processJob(job: Job<ProcessJobData>): Promise<void> {
       });
 
       if (articleData) {
-        await sendApprovalRequest({
-          articleId: result.processedArticleId,
-          tweetText: articleData.tweetText,
-          score: Number(articleData.score),
-          imagePath: articleData.imagePath ?? undefined,
-          sourceUrl: item.url,
-          category: articleData.category ?? 'Genel',
-          threadTweets: (articleData.threadTweets as string[]) ?? undefined,
-          hasReelVideo: !!articleData.videoPath,
-          instagramCaption: articleData.instagramCaption ?? undefined,
-        });
-        log.info({ processedId: result.processedArticleId }, '📲 Telegram onayı istendi');
+        const telegramMinScore = await getDynamicSetting('telegram_min_score', 85);
+        const articleScore = Number(articleData.score);
+
+        if (articleScore >= telegramMinScore) {
+          await sendApprovalRequest({
+            articleId: result.processedArticleId,
+            tweetText: articleData.tweetText,
+            score: articleScore,
+            imagePath: articleData.imagePath ?? undefined,
+            sourceUrl: item.url,
+            category: articleData.category ?? 'Genel',
+            threadTweets: (articleData.threadTweets as string[]) ?? undefined,
+            hasReelVideo: !!articleData.videoPath,
+            instagramCaption: articleData.instagramCaption ?? undefined,
+          });
+          log.info(
+            { processedId: result.processedArticleId, score: articleScore, telegramMinScore },
+            '📲 Telegram onayı istendi (Skor >= 85)',
+          );
+        } else {
+          log.info(
+            { processedId: result.processedArticleId, score: articleScore, telegramMinScore },
+            '📋 Makale Admin Panel havuzuna eklendi (Skor < 85 olduğu için Telegram bildirimine gönderilmedi)',
+          );
+        }
       }
     } else {
       // Doğrudan publish-queue'ya delayed job ekle (automatic mod)

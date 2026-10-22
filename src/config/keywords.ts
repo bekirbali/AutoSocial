@@ -8,111 +8,44 @@
 // İngilizce ve Türkçe terimler — hem başlık hem içerik taraması yapılır
 
 export const NICHE_KEYWORDS = {
-  // İşlemci (CPU)
-  cpu: [
-    'cpu', 'processor', 'ryzen', 'core ultra', 'intel core', 'amd ryzen',
-    'threadripper', 'epyc', 'xeon', 'işlemci', 'cpu test',
-    'benchmark', 'tdp', 'ipc', 'cache', 'nm process', 'socket',
-  ],
-
-  // Ekran Kartı (GPU)
-  gpu: [
-    'gpu', 'graphics card', 'rtx', 'rx ', 'radeon', 'geforce', 'arc graphics',
-    'vram', 'ekran kartı', 'ekran kartı testi', 'rasterization',
-    'ray tracing', 'dlss', 'fsr', 'xess', 'shader', 'cuda', 'rdna', 'xe',
-  ],
-
-  // Bellek (RAM)
-  ram: [
-    'ddr5', 'ddr4', 'ram', 'memory', 'lpddr', 'cl timing',
-    'bellek', 'dual channel', 'expo', 'xmp', 'mhz',
-  ],
-
-  // Depolama
-  storage: [
-    'nvme', 'ssd', 'pcie 5', 'pcie 4', 'm.2', 'nand', 'tlc', 'qlc',
-    'sequential read', 'random write', 'depolama', 'hdd', 'nas',
-  ],
-
-  // Anakart
-  motherboard: [
-    'motherboard', 'anakart', 'chipset', 'x870', 'z890', 'b850',
-    'am5', 'lga1851', 'vrm', 'pcie slot', 'bios',
-  ],
-
-  // Soğutma
-  cooling: [
-    'cooler', 'aio', 'liquid cooling', 'air cooling', 'thermal',
-    'soğutma', 'radiator', 'heat pipe', 'tjunction', 'fan curve',
-  ],
-
-  // Çevre Birimleri
-  peripherals: [
-    'keyboard', 'mouse', 'monitor', 'headset', 'mousepad',
-    'klavye', 'fare', 'monitör', 'kulaklık', '4k monitor', '240hz', '360hz',
-    'ips', 'oled', 'qd-oled', 'response time', 'ghosting',
-  ],
-
-  // Güç Kaynağı
-  psu: [
-    'psu', 'power supply', 'güç kaynağı', '80+ gold', '80+ platinum',
-    '80+ titanium', 'atx 3', 'watt', 'efficiency',
-  ],
-
-  // Kasa
-  case_pc: [
-    'pc case', 'kasa', 'chassis', 'airflow', 'tempered glass', 'itx', 'matx', 'atx',
-  ],
-
-  // Oyun Haberleri
-  gaming: [
-    'fps', 'gaming', 'game', 'oyun', 'benchmark', '1080p', '1440p', '4k gaming',
-    'esports', 'competitive', 'frame time', 'stuttering', 'latency',
-    'epic games', 'steam', 'valve', 'rockstar', 'gta', 'playstation', 'xbox', 'nintendo',
-    'leak', 'sızıntı', 'trailer', 'fragman', 'duyuru', 'humble bundle', 'gog',
-    'game pass', 'ps plus', 'prime gaming', 'weekly free',
-  ],
-
-  // Fırsatlar, İndirimler ve Ücretsiz Oyunlar
-  deals: [
-    'hot deal', 'daily deal', 'deal of the day', 'discount code', 'flash sale', 'price drop', 'special offer', 'limited offer',
-    'indirim', 'fırsat', 'kampanya', 'indirimli satış', 'en ucuz', 'fiyat düşüşü', 'fiyat indirimi', 'uygun fiyat',
-    'amazon deal', 'refurbished',
-    // Ücretsiz oyun terimleri
-    'free game', 'free to keep', 'free to play', 'free this week',
-    'epic games free', 'epic free', 'claim free', 'giveaway',
-    'humble bundle', 'humble free', 'steam free', 'free on steam',
-    'price: free', '$0.00', 'bedava oyun', 'ücretsiz oyun', 'ücretsiz al',
-    'epic games haftalık', 'steam bedava', 'g2a giveaway',
-  ],
-
-  // Sürücüler ve Yazılım
-  software: [
-    'driver', 'update', 'firmware', 'bios update', 'adrenaline',
-    'game ready driver', 'studio driver', 'sürücü güncellemesi',
-  ],
-
-  // Yapay Zeka (AI), Açık Kaynak Modeller & Builder Araçları
+  // 1. Yapay Zeka (AI), LLM'ler & Açık Kaynak Modeller
   ai: [
-    'ai ', 'yapay zeka', 'chatgpt', 'openai', 'gemini', 'gpt',
+    'ai ', 'yapay zeka', 'chatgpt', 'openai', 'gemini', 'gpt', 'gpt-4o', 'gpt-5', 'o1-preview', 'o3-mini',
     'copilot', 'claude', 'anthropic', 'midjourney', 'dall-e', 'stablediffusion', 'llama',
     'npu', 'tensor', 'machine learning', 'deep learning', 'yapay zekâ', 'yapayzeka',
     'deepseek', 'qwen', 'mistral', 'ollama', 'vllm', 'huggingface', 'open-source',
-    'open source', 'açık kaynak', 'open-weights', 'fine-tuning', 'rag', 'agent',
+    'open source', 'açık kaynak', 'open-weights', 'fine-tuning', 'rag', 'agent', 'ai agent',
     'mcp', 'context window', 'reasoning model', 'opencode', 'glm', 'kimi',
-    'whisper', 'flux', 'comfyui', 'llama.cpp', 'reverse engineering', 'modding',
-    'dev tools', 'developer tool', 'cli tool', 'github trending',
-    'sonnet', 'opus', 'haiku', 'computer use', 'model context protocol', 'fable'
+    'whisper', 'flux', 'comfyui', 'llama.cpp', 'prompt engineering',
+    'sonnet', 'opus', 'haiku', 'computer use', 'model context protocol', 'fable',
+    'deepseek-v3', 'deepseek-r1', 'qwen2.5', 'llama 3', 'groq', 'cerebras', 'runpod',
+    'synthetic data', 'reinforcement learning', 'rlhf', 'superintelligence', 'agi',
   ],
 
-  // Akıllı Telefon & Mobil Teknoloji
-  mobile: [
-    'iphone', 'apple', 'ios', 'ipad', 'apple watch', 'airpods', 'vision pro',
-    'samsung', 'galaxy', 'galaxy s', 'galaxy z', 'one ui', 'exynos',
-    'smartphone', 'akıllı telefon', 'snapdragon', 'qualcomm', 'dimensity', 'mediatek',
-    'xiaomi', 'redmi', 'hyperos', 'google pixel', 'pixel 9', 'pixel 8', 'android',
-    'foldable', 'katlanabilir telefon', 'periscope camera', 'telephoto', 'hızlı şarj',
-    'fast charging', 'bionic', 'a18', 'a17', 'apple silicon', 'huawei', 'honor', 'oneplus',
+  // 2. Geliştirici & Builder Araçları, Açık Kaynak Ekosistemi
+  builder: [
+    'developer tool', 'dev tools', 'cli tool', 'github trending', 'open source',
+    'açık kaynak', 'framework', 'library', 'compiler', 'runtime', 'docker', 'kubernetes',
+    'wasm', 'webassembly', 'rustlang', 'typescript', 'golang', 'python', 'neovim',
+    'terminal', 'api', 'sdk', 'backend', 'frontend', 'database', 'sqlite', 'postgres',
+    'redis', 'graphql', 'rest api', 'microservices', 'self-hosted', 'homelab',
+    'reverse engineering', 'modding', 'automation', 'scraper', 'bot', 'workflow',
+    'git', 'linux', 'devops', 'ci/cd', 'github actions',
+  ],
+
+  // 3. Siber Güvenlik, Exploit, Jailbreak & Hack
+  security: [
+    'security', 'siber güvenlik', 'exploit', 'zero-day', '0-day', 'vulnerability',
+    'güvenlik açığı', 'cve-', 'malware', 'ransomware', 'bypass', 'jailbreak',
+    'reverse engineering', 'infosec', 'pentest', 'breach', 'leak', 'sızıntı',
+    'backdoor', 'hacker', 'hacking', 'prompt injection', 'data breach', 'rootkit',
+  ],
+
+  // 4. Stratejik Teknoloji ve Mimari Analizleri
+  tech: [
+    'tech', 'teknoloji', 'datacenter', 'veri merkezi', 'ai chip', 'ai server',
+    'tpu', 'supercomputer', 'quantum computing', 'asic', 'semiconductor',
+    'yarı iletken', 'tsmc', 'silicon', 'silikon', 'model wars', 'ai compute',
   ],
 } as const;
 
@@ -121,6 +54,11 @@ export const ALL_KEYWORDS: string[] = Object.values(NICHE_KEYWORDS).flat();
 
 // ─── KATEGORİ → ANAHTAR KELİME GRUBU MAP ───────────────────────────────────
 export type ArticleCategory =
+  | 'ai'
+  | 'builder'
+  | 'security'
+  | 'tech'
+  // Geriye dönük uyumluluk (arşiv)
   | 'cpu'
   | 'gpu'
   | 'ram'
@@ -133,7 +71,6 @@ export type ArticleCategory =
   | 'gaming'
   | 'deals'
   | 'software'
-  | 'ai'
   | 'mobile'
   | 'general';
 
@@ -151,19 +88,9 @@ function hasKeywordMatch(text: string, keywords: readonly string[]): boolean {
 
 export function detectCategory(text: string): ArticleCategory {
   if (hasKeywordMatch(text, NICHE_KEYWORDS.ai)) return 'ai';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.gpu)) return 'gpu';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.cpu)) return 'cpu';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.gaming)) return 'gaming';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.software)) return 'software';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.deals)) return 'deals';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.mobile)) return 'mobile';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.ram)) return 'ram';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.storage)) return 'storage';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.motherboard)) return 'motherboard';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.cooling)) return 'cooling';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.peripherals)) return 'peripherals';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.psu)) return 'psu';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.case_pc)) return 'case';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.security)) return 'security';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.builder)) return 'builder';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.tech)) return 'tech';
 
   return 'general';
 }
@@ -204,6 +131,9 @@ export const CATEGORY_COLORS: Record<ArticleCategory, { from: string; to: string
   deals:        { from: '#1a0500', to: '#2e0d00' },   // Koyu turuncu-kırmızı
   software:     { from: '#001a1a', to: '#002e2e' },   // Koyu cyan
   ai:           { from: '#0f0c29', to: '#302b63' },   // Koyu lacivert-mor (Gelecekçi his)
+  builder:      { from: '#0d1b2a', to: '#1b263b' },   // Koyu lacivert-çelik mavi
+  security:     { from: '#1a0808', to: '#2e0f0f' },   // Koyu kızıl-siyah (Hacker hissi)
+  tech:         { from: '#0b132b', to: '#1c2541' },   // Derin mavi
   mobile:       { from: '#0d1322', to: '#1d2d50' },   // Koyu titanyum / gece mavisi
   general:      { from: '#111111', to: '#1a1a1a' },   // Nötr siyah
 };

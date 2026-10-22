@@ -6,32 +6,54 @@ import { createLogger } from '../../lib/logger.js';
 
 import { isXManualMode, setXManualMode } from '../../modules/publisher/twitter.js';
 
+import { getAllDynamicSettings, updateDynamicSettings } from '../../lib/settings.js';
+
 const log = createLogger('server:routes:settings');
 export const settingsRouter: Router = Router();
 
 settingsRouter.get('/', async (_req, res): Promise<void> => {
   try {
-    const xManualMode = await isXManualMode();
+    const dynamicSettings = await getAllDynamicSettings();
     res.json({
       success: true,
       data: {
         sources: SOURCES,
         categories: Object.keys(NICHE_KEYWORDS),
         keywords: NICHE_KEYWORDS,
-        xManualMode,
+        xManualMode: dynamicSettings.xManualMode,
+        settings: dynamicSettings,
         env: {
-          appMode: env.APP_MODE,
-          maxTweetsPerDay: env.MAX_TWEETS_PER_DAY,
-          fetchIntervalMinutes: env.FETCH_INTERVAL_MINUTES,
-          enableInstagram: env.ENABLE_INSTAGRAM,
+          appMode: dynamicSettings.appMode,
+          maxTweetsPerDay: dynamicSettings.maxTweetsPerDay,
+          fetchIntervalMinutes: dynamicSettings.fetchIntervalMinutes,
+          enableInstagram: dynamicSettings.enableInstagram,
           publicUrl: env.APP_PUBLIC_URL || 'http://localhost:3000',
-          minScoreThreshold: env.MIN_SCORE_THRESHOLD,
-          xManualMode,
+          minScoreThreshold: dynamicSettings.minScoreThreshold,
+          xManualMode: dynamicSettings.xManualMode,
+          defaultGeminiModel: dynamicSettings.defaultGeminiModel,
         },
       },
     });
   } catch (error: any) {
     log.error({ err: error.message }, 'Ayarlar getirilemedi');
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Dinamik sistem ayarlarını güncelle
+ * Body: Partial<DynamicSettings>
+ */
+settingsRouter.post('/', async (req, res): Promise<void> => {
+  try {
+    const updated = await updateDynamicSettings(req.body);
+    res.json({
+      success: true,
+      message: 'Sistem ayarları başarıyla güncellendi',
+      settings: updated,
+    });
+  } catch (error: any) {
+    log.error({ err: error.message }, 'Sistem ayarları güncellenemedi');
     res.status(500).json({ success: false, error: error.message });
   }
 });

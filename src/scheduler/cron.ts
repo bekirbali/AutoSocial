@@ -9,6 +9,7 @@ import {
 } from '../lib/queue.js';
 import { generateDailySchedule, getTodayPublishedCount } from '../modules/publisher/scheduler.js';
 import { cleanupOldMedia } from './cleanup.js';
+import { getDynamicSetting } from '../lib/settings.js';
 import { env } from '../config/env.js';
 import { db } from '../db/index.js';
 import { processedArticles } from '../db/schema.js';
@@ -123,11 +124,12 @@ export async function schedulePublishJobs(): Promise<void> {
   // 7 günden eski medya dosyalarını (görsel ve video) temizle
   await cleanupOldMedia(7).catch(e => log.error({ err: e.message }, 'Cleanup hatası'));
 
-  const schedule = generateDailySchedule();
+  const maxTweets = await getDynamicSetting('max_tweets_per_day', env.MAX_TWEETS_PER_DAY);
+  const schedule = generateDailySchedule(new Date(), maxTweets);
   const todayCount = await getTodayPublishedCount();
 
-  if (todayCount >= env.MAX_TWEETS_PER_DAY) {
-    log.info({ todayCount }, 'Günlük limit dolu, publish job zamanlanmıyor');
+  if (todayCount >= maxTweets) {
+    log.info({ todayCount, maxTweets }, 'Günlük limit dolu, publish job zamanlanmıyor');
     return;
   }
 

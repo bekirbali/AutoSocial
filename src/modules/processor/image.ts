@@ -487,6 +487,9 @@ function categoryLabel(category: ArticleCategory): string {
     deals: '🔥 FIRSAT',
     software: 'YAZILIM',
     ai: 'YAPAY ZEKA',
+    builder: 'BUILDER',
+    security: 'GÜVENLİK',
+    tech: 'TEKNOLOJİ',
     mobile: 'AKILLI TELEFON',
     general: 'DONANIM',
   };

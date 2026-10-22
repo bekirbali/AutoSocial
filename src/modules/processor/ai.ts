@@ -4,12 +4,117 @@ import { env } from '../../config/env.js';
 import { createLogger } from '../../lib/logger.js';
 import type { ArticleCategory } from '../../config/keywords.js';
 
+import { getDynamicSetting } from '../../lib/settings.js';
+
 const log = createLogger('processor:ai');
 
 // Gemini istemcisi — modüle yüklendiğinde bir kez başlatılır
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite' });
+
+export const GEMINI_FALLBACK_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+] as const;
+
+export type GeminiModelName = (typeof GEMINI_FALLBACK_MODELS)[number];
+
+const modelClients = new Map<string, any>();
+
+function getModelClient(modelName: string) {
+  if (!modelClients.has(modelName)) {
+    modelClients.set(
+      modelName,
+      genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
+      }),
+    );
+  }
+  return modelClients.get(modelName)!;
+}
+
+/**
+ * 3.6 Flash -> 3.5 Flash -> 3.5 Flash-Lite fallback zinciriyle içerik üretir
+ */
+async function generateWithFallback(
+  contentArgs: any[],
+  operationName = 'Gemini içerik üretimi',
+): Promise<{ text: string; usedModel: string }> {
+  const preferredModel = await getDynamicSetting('default_gemini_model', 'gemini-3.6-flash');
+  const startIndex = Math.max(0, GEMINI_FALLBACK_MODELS.indexOf(preferredModel as any));
+  const modelsToTry = [
+    ...GEMINI_FALLBACK_MODELS.slice(startIndex),
+    ...GEMINI_FALLBACK_MODELS.slice(0, startIndex),
+  ];
+
+  let lastError: any = null;
+
+  for (let i = 0; i < modelsToTry.length; i++) {
+    const modelName = modelsToTry[i]!;
+    try {
+      const client = getModelClient(modelName);
+      const result = await client.generateContent(contentArgs);
+      const text = result.response.text().trim();
+      log.debug({ modelName, operation: operationName }, 'Gemini yanıtı başarıyla alındı');
+      return { text, usedModel: modelName };
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err?.message || String(err);
+      const nextModel = modelsToTry[i + 1];
+
+      if (nextModel) {
+        log.warn(
+          { currentModel: modelName, nextModel, err: errMsg, operation: operationName },
+          `⚠️ ${modelName} başarısız oldu/kotaya takıldı, ${nextModel} modeline geçiliyor...`,
+        );
+      } else {
+        log.error(
+          { modelName, err: errMsg, operation: operationName },
+          '❌ Tüm Gemini fallback modelleri tükendi!',
+        );
+      }
+    }
+  }
+
+  throw lastError || new Error('Tüm Gemini fallback modelleri tükendi');
+}
+
+/**
+ * Gemini'den dönen JSON çıktısını güvenle ayrıştırır.
+ * Metin string'leri içindeki kontrol karakterlerini (çıplak satır sonları, sekme karakterleri) escape ederek
+ * "Bad control character in string literal in JSON" hatasını engeller.
+ */
+function safeParseJson<T>(rawText: string, fallbackErrorMsg = 'Gemini geçersiz JSON döndürdü'): T {
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(fallbackErrorMsg);
+  }
+
+  const jsonStr = jsonMatch[0];
+
+  try {
+    return JSON.parse(jsonStr) as T;
+  } catch (firstErr) {
+    // Tırnak işaretleri içindeki kaçırılmamış (unescaped) newline ve kontrol karakterlerini güvenle kaçır
+    try {
+      const sanitized = jsonStr.replace(/"((?:[^"\\]|\\.)*)"/gs, (_match, p1) => {
+        const escaped = p1
+          .replace(/\r\n/g, '\\n')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\n')
+          .replace(/\t/g, '\\t');
+        return `"${escaped}"`;
+      });
+      return JSON.parse(sanitized) as T;
+    } catch {
+      throw firstErr;
+    }
+  }
+}
 
 export interface TweetGenerationResult {
   tweetText: string;
@@ -60,6 +165,9 @@ const CATEGORY_GUIDES: Record<ArticleCategory, { angle: string; hookHint: string
   deals:       { angle: 'Kaçırılmayacak fiyat düşüşü ve fiyat/performans oranı', hookHint: 'nadir görülen dip fiyat fırsatı' },
   software:    { angle: 'Sürücü güncellemeleri, optimizasyon yamaları ve açık kaynak araçlar', hookHint: 'sistem performansını doğrudan artıran yazılım adımı' },
   ai:          { angle: 'Açık kaynak modeller (DeepSeek, Llama, Qwen), yerel LLM araçları, developer kütüphaneleri, API maliyetleri/kısıtları ve model savaşları', hookHint: 'ücretsiz/açık kaynak alternatif, yerel çalıştırma avantajı veya geliştiricinin cebini/işini kurtaran hamle' },
+  builder:     { angle: 'Geliştirici verimliliği, açık kaynak CLI/kütüphane devrimi, yerel çalıştırma veya yeni framework mimarisi', hookHint: 'geliştiricinin iş akışını hızlandıran araç, açık kaynak devrimi veya yeni builder standardı' },
+  security:    { angle: 'Kritik güvenlik açığı, zero-day tehdidi, AI jailbreak veya sistemik risk', hookHint: 'güvenlik duvarını delen açık, şok exploit veya acil yama uyarısı' },
+  tech:        { angle: 'Teknoloji devlerinin mimari hamleleri, veri merkezi / çip savaşları ve sektörün geleceği', hookHint: 'sektörün geleceğini şekillendiren kritik stratejik hamle' },
   mobile:      { angle: 'Kamera yetenekleri, işlemci (Apple Silicon/Snapdragon) performansı, pil/şarj ömrü, yapay zeka özellikleri ve kullanıcı deneyimi', hookHint: 'akıllı telefon pazarındaki rekabet, kamera devrimi veya günlük kullanımı değiştiren yeni özellikler' },
   general:     { angle: 'Teknoloji ekosistemi, donanım endüstrisi ve geleceğin standartları', hookHint: 'sektörün geleceğini şekillendiren kritik gelişme' },
 };
@@ -141,23 +249,18 @@ Sadece JSON döndür.`;
       ];
     }
 
-    const result = await flashModel.generateContent(contentArgs);
-    const responseText = result.response.text().trim();
+    const { text: responseText, usedModel } = await generateWithFallback(contentArgs, 'Tweet üretimi');
+    log.debug({ usedModel, title }, 'Tweet modeliyle üretim tamamlandı');
 
-    // JSON parse et
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Gemini geçersiz JSON döndürdü');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as {
+    // JSON parse et (kontrol karakterlerini ve ham satır sonlarını güvenle temizler)
+    const parsed = safeParseJson<{
       tweetText: string;
       imageHook?: string;
       translatedTitle?: string;
       impactScore?: number;
       impactReason?: string;
       tone?: string;
-    };
+    }>(responseText, 'Gemini tweet için geçersiz JSON döndürdü');
 
     // Güvenlik kontrolleri ve AI kalıntı temizliği
     let tweetText = sanitizeTweetText(parsed.tweetText);
@@ -278,21 +381,16 @@ Sadece JSON döndür, başka hiçbir şey yazma.`;
       ];
     }
 
-    const result = await flashModel.generateContent(contentArgs);
-    const responseText = result.response.text().trim();
+    const { text: responseText, usedModel } = await generateWithFallback(contentArgs, 'Instagram Caption üretimi');
+    log.debug({ usedModel, title }, 'Instagram Caption modeliyle üretim tamamlandı');
 
-    // JSON parse et
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Gemini geçersiz JSON döndürdü');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as {
+    // JSON parse et (kontrol karakterlerini ve ham satır sonlarını güvenle temizler)
+    const parsed = safeParseJson<{
       caption: string;
       translatedTitle?: string;
       hashtags?: string[];
       tone: string;
-    };
+    }>(responseText, 'Gemini Instagram caption için geçersiz JSON döndürdü');
 
     const finalCaption = sanitizeTweetText(parsed.caption);
     const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags : [];
@@ -358,17 +456,18 @@ Sadece aşağıdaki JSON formatında yanıt ver, başka açıklama ekleme:
 }`;
 
   try {
-    const result = await flashModel.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    const responseText = result.response.text().trim();
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+    const { text: responseText } = await generateWithFallback(
+      [{ role: 'user', parts: [{ text: prompt }] }],
+      'Bülten Instagram caption üretimi',
+    );
+    try {
+      const parsed = safeParseJson<{ caption?: string }>(responseText);
       if (parsed.caption) {
         log.info({ digestType, articleCount: articles.length }, 'Bülten Instagram caption üretildi');
         return parsed.caption.replace(/#donanumpost\b|#donanımpost\b/gi, '#teknofiltre');
       }
+    } catch {
+      // JSON parse edilemezse ham metin temizliği ile devam et
     }
 
     return responseText.replace(/```json|```/g, '').replace(/#donanumpost\b|#donanımpost\b/gi, '#teknofiltre').trim();
@@ -444,20 +543,16 @@ ALTIN KURALLAR (VİDEO SÜRESİ KESİNLİKLE 25-35 SANİYEYİ GEÇMEMELİDİR):
 Sadece JSON döndür.`;
 
   try {
-    const result = await flashModel.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    const responseText = result.response.text().trim();
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Gemini Reels script için geçersiz JSON döndürdü');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as {
+    const { text: responseText } = await generateWithFallback(
+      [{ role: 'user', parts: [{ text: prompt }] }],
+      'Reels script üretimi',
+    );
+    // JSON parse et (kontrol karakterlerini ve ham satır sonlarını güvenle temizler)
+    const parsed = safeParseJson<{
       hookTitle: string;
       segments?: Array<{ articleIndex?: number; headline?: string; script: string }>;
       outroScript?: string;
-    };
+    }>(responseText, 'Gemini Reels script için geçersiz JSON döndürdü');
 
     let outro = parsed.outroScript
       ? parsed.outroScript.replace(/gereksiz\s*detaysız\s*/gi, '').trim()
@@ -590,16 +685,11 @@ TASARIM VE METİN KURALLARI:
 Sadece JSON döndür.`;
 
   try {
-    const result = await flashModel.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    const responseText = result.response.text().trim();
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Gemini Carousel için geçersiz JSON döndürdü');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as CarouselScriptResult;
+    const { text: responseText } = await generateWithFallback(
+      [{ role: 'user', parts: [{ text: prompt }] }],
+      'Carousel metin üretimi',
+    );
+    const parsed = safeParseJson<CarouselScriptResult>(responseText, 'Gemini Carousel için geçersiz JSON döndürdü');
     log.info({ hook: parsed.hook, s2Title: parsed.summaryTitle, s3Title: parsed.commentaryTitle }, '📑 Carousel metinleri üretildi');
     return parsed;
   } catch (err: any) {

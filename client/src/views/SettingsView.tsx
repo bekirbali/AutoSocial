@@ -12,9 +12,13 @@ import {
   Zap,
   Hand,
   Loader2,
+  Sliders,
+  Save,
+  Check,
+  Cpu,
 } from 'lucide-react';
 import type { SourceItem } from '../types/api';
-import { fetchSettings, toggleXManualMode } from '../lib/api';
+import { fetchSettings, toggleXManualMode, updateDynamicSettings } from '../lib/api';
 
 export const SettingsView: React.FC = () => {
   const [data, setData] = useState<{
@@ -22,11 +26,24 @@ export const SettingsView: React.FC = () => {
     categories: string[];
     keywords: Record<string, string[]>;
     xManualMode?: boolean;
+    settings?: any;
     env: any;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const [formSettings, setFormSettings] = useState({
+    maxTweetsPerDay: 15,
+    minScoreThreshold: 75,
+    telegramMinScore: 85,
+    fetchIntervalMinutes: 15,
+    appMode: 'hybrid',
+    enableInstagram: false,
+    defaultGeminiModel: 'gemini-3.6-flash',
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -39,6 +56,16 @@ export const SettingsView: React.FC = () => {
       if (res.categories && res.categories.length > 0) {
         setSelectedCategory(res.categories[0]!);
       }
+      const s = (res as any).settings || res.env || {};
+      setFormSettings({
+        maxTweetsPerDay: s.maxTweetsPerDay ?? 15,
+        minScoreThreshold: s.minScoreThreshold ?? 75,
+        telegramMinScore: s.telegramMinScore ?? 85,
+        fetchIntervalMinutes: s.fetchIntervalMinutes ?? 15,
+        appMode: s.appMode ?? 'hybrid',
+        enableInstagram: Boolean(s.enableInstagram),
+        defaultGeminiModel: s.defaultGeminiModel ?? 'gemini-3.6-flash',
+      });
     } catch (err: any) {
       console.error('Ayarlar yüklenemedi:', err);
     } finally {
@@ -60,6 +87,27 @@ export const SettingsView: React.FC = () => {
     }
   };
 
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    setSaveSuccessMsg(false);
+    try {
+      const updated = await updateDynamicSettings(formSettings);
+      if (data) {
+        setData({
+          ...data,
+          env: { ...data.env, ...updated },
+        });
+      }
+      setSaveSuccessMsg(true);
+      setTimeout(() => setSaveSuccessMsg(false), 3500);
+    } catch (err: any) {
+      alert(`Ayarlar kaydedilemedi: ${err.message}`);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
 
   if (isLoading || !data) {
     return (
@@ -72,7 +120,7 @@ export const SettingsView: React.FC = () => {
     );
   }
 
-  const { sources, categories, keywords, env } = data;
+  const { sources, categories, keywords } = data;
 
   return (
     <div className="space-y-6">
@@ -152,6 +200,161 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
+      {/* ─── Canlı Sistem Parametreleri & AI Fallback ───────────────────────── */}
+      <form onSubmit={handleSaveSettings} className="glass-card p-6 rounded-2xl space-y-5 border border-indigo-500/20 bg-slate-900/50">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 m-0">
+              <Sliders className="w-4 h-4 text-indigo-400" />
+              Canlı Operasyonel Parametreler & AI Fallback
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Değişiklikler Redis'e kaydedilir ve çalışan servise canlı yansır (Restart gerektirmez).
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={isSavingSettings}
+            className="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-900/20 disabled:opacity-50"
+          >
+            {isSavingSettings ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : saveSuccessMsg ? (
+              <Check className="w-3.5 h-3.5 text-emerald-300" />
+            ) : (
+              <Save className="w-3.5 h-3.5" />
+            )}
+            <span>{isSavingSettings ? 'Kaydediliyor...' : saveSuccessMsg ? 'Kaydedildi!' : 'Ayarları Kaydet'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Günlük Maks Tweet */}
+          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+              <span>Günlük Maksimum Tweet</span>
+              <span className="text-cyan-400 font-mono font-bold">{formSettings.maxTweetsPerDay}</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={formSettings.maxTweetsPerDay}
+              onChange={(e) => setFormSettings({ ...formSettings, maxTweetsPerDay: Number(e.target.value) })}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-cyan-500 focus:outline-none"
+            />
+            <p className="text-[10px] text-slate-500">Günde yayınlanacak tavan tweet sayısı</p>
+          </div>
+
+          {/* Min Skor Eşiği (Admin Panel) */}
+          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+              <span>Admin Panel Skor Eşiği</span>
+              <span className="text-amber-400 font-mono font-bold">{formSettings.minScoreThreshold}</span>
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={5}
+              value={formSettings.minScoreThreshold}
+              onChange={(e) => setFormSettings({ ...formSettings, minScoreThreshold: Number(e.target.value) })}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-amber-500 focus:outline-none"
+            />
+            <p className="text-[10px] text-slate-500">75+ haberler işlenip Admin Panel'e gelir</p>
+          </div>
+
+          {/* Telegram Bildirim Eşiği */}
+          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+              <span>Telegram Bildirim Eşiği</span>
+              <span className="text-emerald-400 font-mono font-bold">{formSettings.telegramMinScore}</span>
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={5}
+              value={formSettings.telegramMinScore}
+              onChange={(e) => setFormSettings({ ...formSettings, telegramMinScore: Number(e.target.value) })}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-emerald-500 focus:outline-none"
+            />
+            <p className="text-[10px] text-slate-500">Yalnızca 85+ acil haberler Telegram'a düşer</p>
+          </div>
+
+          {/* RSS Tarama Aralığı */}
+          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+              <span>RSS Tarama Aralığı</span>
+              <span className="text-slate-200 font-mono font-bold">{formSettings.fetchIntervalMinutes} dk</span>
+            </label>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              step={5}
+              value={formSettings.fetchIntervalMinutes}
+              onChange={(e) => setFormSettings({ ...formSettings, fetchIntervalMinutes: Number(e.target.value) })}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-cyan-500 focus:outline-none"
+            />
+            <p className="text-[10px] text-slate-500">Kaynakların taranma periyodu (min 5 dk)</p>
+          </div>
+
+          {/* Çalışma Modu */}
+          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-300">
+              Çalışma Modu
+            </label>
+            <select
+              value={formSettings.appMode}
+              onChange={(e) => setFormSettings({ ...formSettings, appMode: e.target.value as any })}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:border-cyan-500 focus:outline-none cursor-pointer"
+            >
+              <option value="hybrid">Hibrit (Telegram Onaylı)</option>
+              <option value="automatic">Otomatik (Direkt Yayın)</option>
+            </select>
+            <p className="text-[10px] text-slate-500">Hibrit mod Telegram bot onayı bekler</p>
+          </div>
+
+          {/* Instagram Entegrasyonu */}
+          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-300">
+              Instagram Yayını
+            </label>
+            <select
+              value={formSettings.enableInstagram ? 'true' : 'false'}
+              onChange={(e) => setFormSettings({ ...formSettings, enableInstagram: e.target.value === 'true' })}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:border-pink-500 focus:outline-none cursor-pointer"
+            >
+              <option value="true">Aktif (Reels & Carousel)</option>
+              <option value="false">Pasif (Yalnızca X)</option>
+            </select>
+            <p className="text-[10px] text-slate-500">13:00 ve 19:00 bülten yayınları</p>
+          </div>
+
+          {/* Varsayılan Gemini Modeli */}
+          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                Gemini Modeli
+              </span>
+              <span className="text-[10px] text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-800/40">3 Seviye Fallback</span>
+            </label>
+            <select
+              value={formSettings.defaultGeminiModel}
+              onChange={(e) => setFormSettings({ ...formSettings, defaultGeminiModel: e.target.value as any })}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-indigo-500 focus:outline-none cursor-pointer"
+            >
+              <option value="gemini-3.6-flash">gemini-3.6-flash (En Hızlı & Zeki)</option>
+              <option value="gemini-3.5-flash">gemini-3.5-flash (Dengeli)</option>
+              <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Tasarruflu)</option>
+            </select>
+            <p className="text-[10px] text-slate-400 truncate">Hata/429'da otomatik alt modele düşer</p>
+          </div>
+        </div>
+      </form>
+
       {/* ─── 1. Brand & Architectural Invariants ────────────────────────────── */}
       <div className="glass-card p-6 rounded-2xl space-y-4">
 
@@ -186,10 +389,10 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase">Min Skor Eşiği</span>
-            <div className="text-sm font-bold text-amber-400 mt-1">85 / 100 Puan</div>
+            <span className="text-[11px] font-semibold text-slate-400 uppercase">Telegram Onay Eşiği</span>
+            <div className="text-sm font-bold text-emerald-400 mt-1">{formSettings.telegramMinScore} / 100 Puan</div>
             <p className="text-[11px] text-slate-500 mt-1">
-              Freshness %40 + Keyword %30 + Kaynak %20 + AI %10
+              Yalnızca 85+ puanlı haberler Telegram bildirimine düşer.
             </p>
           </div>
         </div>
@@ -198,19 +401,22 @@ export const SettingsView: React.FC = () => {
         <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400 font-mono">
           <div className="flex items-center gap-2">
             <Server className="w-3.5 h-3.5 text-slate-500" />
-            <span>Mod: <b className="text-slate-200">{env.appMode}</b></span>
+            <span>Mod: <b className="text-slate-200">{formSettings.appMode}</b></span>
           </div>
           <div>
-            <span>Aktif Skor Filtresi: <b className="text-amber-400">{env.minScoreThreshold ?? 90}</b></span>
+            <span>Panel Eşiği: <b className="text-amber-400">{formSettings.minScoreThreshold}</b></span>
           </div>
           <div>
-            <span>Günlük Maksimum X: <b className="text-slate-200">{env.maxTweetsPerDay}</b></span>
+            <span>Telegram Eşiği: <b className="text-emerald-400">{formSettings.telegramMinScore}</b></span>
           </div>
           <div>
-            <span>Tarama Sıklığı: <b className="text-slate-200">{env.fetchIntervalMinutes} dk</b></span>
+            <span>Günlük Maksimum X: <b className="text-slate-200">{formSettings.maxTweetsPerDay}</b></span>
           </div>
           <div>
-            <span>Instagram: <b className="text-emerald-400">{env.enableInstagram ? 'Aktif' : 'Pasif'}</b></span>
+            <span>Tarama Sıklığı: <b className="text-slate-200">{formSettings.fetchIntervalMinutes} dk</b></span>
+          </div>
+          <div>
+            <span>Instagram: <b className="text-emerald-400">{formSettings.enableInstagram ? 'Aktif' : 'Pasif'}</b></span>
           </div>
         </div>
       </div>

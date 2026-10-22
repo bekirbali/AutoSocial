@@ -125,7 +125,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['oyun geliştirme', 'ai gaming', 'modlama', '3d', 'unreal'],
-    isActive: true,
+    isActive: false, // Genel konsol/sektör haberleri bastığı için pasife alındı
   },
 
   // ─── TÜRKÇE AI & TEKNOLOJİ KAYNAKLARI ─────────────────────────────────────

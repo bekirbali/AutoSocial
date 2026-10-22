@@ -12,6 +12,7 @@ import { extractOpenGraphImage, resolveHighResImage } from './downloader.js';
 import { hashUrl } from './dedup.js';
 import { detectCategory } from '../../config/keywords.js';
 import { env } from '../../config/env.js';
+import { getDynamicSetting } from '../../lib/settings.js';
 import type { FetchedItem } from '../fetcher/rss.js';
 import { SOURCES } from '../../config/sources.js';
 import path from 'path';
@@ -60,11 +61,12 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
 
     // ─── ADIM 4: Öncelik Skoru ───────────────────────────────────────────────
     const scoreBreakdown = scoreArticle(item, reliability);
+    const minScoreThreshold = await getDynamicSetting('min_score_threshold', env.MIN_SCORE_THRESHOLD);
 
-    if (scoreBreakdown.total < env.MIN_SCORE_THRESHOLD) {
+    if (scoreBreakdown.total < minScoreThreshold) {
       await markAsProcessed(item.url);
       log.debug(
-        { ...logCtx, score: scoreBreakdown.total, threshold: env.MIN_SCORE_THRESHOLD },
+        { ...logCtx, score: scoreBreakdown.total, threshold: minScoreThreshold },
         'Skor eşiğin altında, atlanıyor',
       );
       return {
