@@ -59,7 +59,7 @@ const CATEGORY_GUIDES: Record<ArticleCategory, { angle: string; hookHint: string
   gaming:      { angle: 'Oyun performansı, motor optimizasyonları ve sektörün büyük kırılmaları', hookHint: 'oyun dünyasında taşları yerinden oynatan gelişme' },
   deals:       { angle: 'Kaçırılmayacak fiyat düşüşü ve fiyat/performans oranı', hookHint: 'nadir görülen dip fiyat fırsatı' },
   software:    { angle: 'Sürücü güncellemeleri, optimizasyon yamaları ve açık kaynak araçlar', hookHint: 'sistem performansını doğrudan artıran yazılım adımı' },
-  ai:          { angle: 'Geliştiricilere hız katan modeller, açık kaynak LLM\'ler ve donanım gereksinimleri', hookHint: 'yapay zekada ezber bozan veya işleri kolaylaştıran hamle' },
+  ai:          { angle: 'Açık kaynak modeller (DeepSeek, Llama, Qwen), yerel LLM araçları, developer kütüphaneleri, API maliyetleri/kısıtları ve model savaşları', hookHint: 'ücretsiz/açık kaynak alternatif, yerel çalıştırma avantajı veya geliştiricinin cebini/işini kurtaran hamle' },
   mobile:      { angle: 'Kamera yetenekleri, işlemci (Apple Silicon/Snapdragon) performansı, pil/şarj ömrü, yapay zeka özellikleri ve kullanıcı deneyimi', hookHint: 'akıllı telefon pazarındaki rekabet, kamera devrimi veya günlük kullanımı değiştiren yeni özellikler' },
   general:     { angle: 'Teknoloji ekosistemi, donanım endüstrisi ve geleceğin standartları', hookHint: 'sektörün geleceğini şekillendiren kritik gelişme' },
 };
@@ -78,7 +78,7 @@ export async function generateTweet(
   const guide = CATEGORY_GUIDES[category] || CATEGORY_GUIDES.general;
   const sourceInfo = summary ? `\n\nİçerik Detayları: ${summary.substring(0, 450)}` : '';
 
-  const prompt = `Sen "TeknoFiltre" markasının kurucusu, bağımsız, samimi ve donanım/teknoloji dünyasını çok iyi bilen kıdemli bir teknoloji editörüsün. Sloganın: "Gereksizi eliyorum, ne işe yarar onu yazıyorum."
+  const prompt = `Sen "TeknoFiltre" markasının kurucusu, bağımsız, samimi ve yapay zeka, açık kaynak modeller, geliştirici araçları ile teknoloji dünyasını çok iyi bilen kıdemli bir builder/teknoloji küratörüsün. Sloganın: "Gereksizi eliyorum, ne işe yarar onu yazıyorum."
 
 GÖREV: Aşağıdaki içeriği analiz et ve X'te (Twitter) kesinlikle yapay zeka kokmayan, sanki işi bilen bir insan editör yazmış gibi duran, yüksek etkileşimli TAM OLARAK 2 PARAGRAFLI bir tweet hazırla.
 

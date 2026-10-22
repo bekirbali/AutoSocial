@@ -25,7 +25,135 @@ export interface SourceConfig {
 }
 
 export const SOURCES: SourceConfig[] = [
-  // ─── YABANCI KAYNAKLAR (Hız arbitrajı için öncelikli) ────────────────────
+  // ─── YENİ NİŞ: AI / HACKER / BUILDER & DEV TOOLS (Öncelikli Kaynaklar) ────
+
+  {
+    id: 'huggingface_blog',
+    name: 'Hugging Face Blog',
+    url: 'https://huggingface.co/blog',
+    rssUrl: 'https://huggingface.co/blog/feed.xml',
+    lang: 'en',
+    reliability: 5,
+    categories: ['ai', 'açık kaynak', 'model savaşları', 'llm', 'benchmark'],
+    isActive: true,
+  },
+  {
+    id: 'hn_frontpage',
+    name: 'Hacker News',
+    url: 'https://news.ycombinator.com',
+    rssUrl: 'https://hnrss.org/frontpage',
+    lang: 'en',
+    reliability: 5,
+    categories: ['hacker', 'builder', 'açık kaynak', 'geliştirici', 'ai'],
+    isActive: true,
+  },
+  {
+    id: 'theverge_ai',
+    name: 'The Verge AI',
+    url: 'https://www.theverge.com/ai-artificial-intelligence',
+    rssUrl: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml',
+    lang: 'en',
+    reliability: 4,
+    categories: ['ai', 'model savaşları', 'teknoloji', 'tüketici etkisi'],
+    isActive: true,
+  },
+  {
+    id: 'arstechnica_tech',
+    name: 'Ars Technica Tech Lab',
+    url: 'https://arstechnica.com/information-technology/',
+    rssUrl: 'https://feeds.arstechnica.com/arstechnica/technology-lab',
+    lang: 'en',
+    reliability: 5,
+    categories: ['teknoloji', 'ai', 'güvenlik', 'analiz'],
+    isActive: true,
+  },
+  {
+    id: 'techcrunch_ai',
+    name: 'TechCrunch AI',
+    url: 'https://techcrunch.com/category/artificial-intelligence/',
+    rssUrl: 'https://techcrunch.com/category/artificial-intelligence/feed/',
+    lang: 'en',
+    reliability: 4,
+    categories: ['ai', 'girişim', 'model savaşları', 'teknoloji'],
+    isActive: true,
+  },
+  {
+    id: 'changelog',
+    name: 'Changelog',
+    url: 'https://changelog.com',
+    rssUrl: 'https://changelog.com/feed',
+    lang: 'en',
+    reliability: 5,
+    categories: ['açık kaynak', 'builder', 'geliştirici araçları', 'yazılım'],
+    isActive: true,
+  },
+  {
+    id: 'github_blog',
+    name: 'GitHub Blog',
+    url: 'https://github.blog',
+    rssUrl: 'https://github.blog/feed/',
+    lang: 'en',
+    reliability: 5,
+    categories: ['açık kaynak', 'geliştirici', 'ai', 'copilot'],
+    isActive: true,
+  },
+  {
+    id: 'bleepingcomputer',
+    name: 'BleepingComputer',
+    url: 'https://www.bleepingcomputer.com',
+    rssUrl: 'https://www.bleepingcomputer.com/feed/',
+    lang: 'en',
+    reliability: 4,
+    categories: ['güvenlik', 'hacker', 'bypass', 'yazılım'],
+    isActive: true,
+  },
+  {
+    id: 'simonwillison',
+    name: "Simon Willison's Weblog",
+    url: 'https://simonwillison.net',
+    rssUrl: 'https://simonwillison.net/atom/everything/',
+    lang: 'en',
+    reliability: 5,
+    categories: ['ai', 'llm', 'builder', 'araçlar', 'açık kaynak'],
+    isActive: true,
+  },
+  {
+    id: 'eightylevel',
+    name: '80 Level',
+    url: 'https://80.lv',
+    rssUrl: 'https://80.lv/feed',
+    lang: 'en',
+    reliability: 4,
+    categories: ['oyun geliştirme', 'ai gaming', 'modlama', '3d', 'unreal'],
+    isActive: true,
+  },
+
+  // ─── TÜRKÇE AI & TEKNOLOJİ KAYNAKLARI ─────────────────────────────────────
+
+  {
+    id: 'webrazzi_ai',
+    name: 'Webrazzi Yapay Zeka',
+    url: 'https://webrazzi.com/kategori/yapay-zeka/',
+    rssUrl: 'https://webrazzi.com/kategori/yapay-zeka/feed/',
+    lang: 'tr',
+    reliability: 4,
+    categories: ['ai', 'yapay zeka', 'girişim', 'türkiye'],
+    isActive: true,
+  },
+  {
+    id: 'swipeline',
+    name: 'Swipeline',
+    url: 'https://swipeline.co',
+    rssUrl: 'https://swipeline.co/feed/',
+    lang: 'tr',
+    reliability: 4,
+    categories: ['teknoloji', 'girişim', 'ai'],
+    isActive: true,
+  },
+
+  /*
+  // ─── ESKİ / ARŞİVLENEN DONANIM, MOBİL VE OYUN KAYNAKLARI (İLERİDE LAZIM OLURSA) ────
+  // İhtiyaç halinde isActive: true yapılarak veya bu yorum bloğu kaldırılarak tekrar açılabilir.
 
   {
     id: 'anandtech',
@@ -45,7 +173,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 5,
     categories: ['donanım', 'işlemci', 'ekran kartı', 'bellek', 'test', 'fırsat'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'techpowerup',
@@ -55,7 +183,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['donanım', 'ekran kartı', 'sürücü', 'işlemci'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'hardwareluxx',
@@ -65,17 +193,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'de',
     reliability: 4,
     categories: ['donanım', 'işlemci', 'ekran kartı'],
-    isActive: true,
-  },
-  {
-    id: 'theverge_tech',
-    name: 'The Verge',
-    url: 'https://www.theverge.com',
-    rssUrl: 'https://www.theverge.com/rss/index.xml',
-    lang: 'en',
-    reliability: 4,
-    categories: ['teknoloji', 'donanım', 'oyun'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'techradar',
@@ -85,7 +203,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['donanım', 'fırsat', 'inceleme'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'pcmag',
@@ -95,7 +213,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['donanım', 'inceleme', 'fırsat'],
-    isActive: false, // Cloudflare Turnstile bot koruması nedeniyle RSS erişimi engelleniyor
+    isActive: false,
   },
   {
     id: 'videocardz',
@@ -105,17 +223,17 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['ekran kartı', 'donanım'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'overclock3d',
     name: 'Overclock3D',
     url: 'https://www.overclock3d.net',
-    rssUrl: 'https://overclock3d.net/feed',
+    rssUrl: 'https://www.overclock3d.net/feed',
     lang: 'en',
     reliability: 3,
     categories: ['donanım', 'test', 'overclock'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'gsmarena',
@@ -125,7 +243,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 5,
     categories: ['mobil', 'akıllı telefon', 'donanım'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: '9to5mac',
@@ -135,7 +253,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 5,
     categories: ['apple', 'iphone', 'mobil'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'sammobile',
@@ -145,44 +263,8 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['samsung', 'galaxy', 'mobil'],
-    isActive: true,
+    isActive: false,
   },
-  {
-    id: 'reddit_publicfreakout',
-    name: 'Reddit PublicFreakout',
-    url: 'https://www.reddit.com/r/PublicFreakout',
-    rssUrl: 'PublicFreakout',
-    type: 'reddit',
-    lang: 'en',
-    reliability: 3,
-    categories: ['genel', 'video'], // Sadece test amaçlı, normalde donanım kategorisi olur
-    isActive: false, // TODO: API entegrasyonu yapılınca true yapılacak
-  },
-  {
-    id: 'reddit_crazyfuckingvideos',
-    name: 'Reddit CrazyFuckingVideos',
-    url: 'https://www.reddit.com/r/CrazyFuckingVideos',
-    rssUrl: 'CrazyFuckingVideos',
-    type: 'reddit',
-    lang: 'en',
-    reliability: 3,
-    categories: ['genel', 'video'],
-    isActive: false, // TODO: API entegrasyonu yapılınca true yapılacak
-  },
-  {
-    id: 'reddit_interestingasfuck',
-    name: 'Reddit interestingasfuck',
-    url: 'https://www.reddit.com/r/interestingasfuck',
-    rssUrl: 'interestingasfuck',
-    type: 'reddit',
-    lang: 'en',
-    reliability: 3,
-    categories: ['genel', 'video'],
-    isActive: false, // TODO: API entegrasyonu yapılınca true yapılacak
-  },
-
-  // ─── TÜRKÇE KAYNAKLAR ──────────────────────────────────────────────────────
-
   {
     id: 'donanimhaber',
     name: 'Donanım Haber',
@@ -191,7 +273,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'tr',
     reliability: 5,
     categories: ['donanım', 'fırsat', 'inceleme', 'işlemci', 'ekran kartı'],
-    isActive: false, // Donanım Haber RSS sistemini kapattığı için (HTML dönüyor) askıya alındı
+    isActive: false,
   },
   {
     id: 'chip_tr',
@@ -201,7 +283,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'tr',
     reliability: 4,
     categories: ['donanım', 'teknoloji', 'oyun'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'shiftdelete',
@@ -211,7 +293,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'tr',
     reliability: 3,
     categories: ['donanım', 'teknoloji', 'fırsat'],
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'webtekno',
@@ -221,11 +303,8 @@ export const SOURCES: SourceConfig[] = [
     lang: 'tr',
     reliability: 3,
     categories: ['teknoloji', 'donanım', 'oyun'],
-    isActive: true,
+    isActive: false,
   },
-
-  // ─── OYUN FIRSATLARI VE ÜCRETSİZ OYUN KAYNAKLARI ──────────────────────────
-
   {
     id: 'pcgamer',
     name: 'PC Gamer',
@@ -234,8 +313,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['oyun', 'fırsat', 'ücretsiz oyun', 'inceleme'],
-    isActive: true,
-    // PC Gamer Epic Games haftalık ücretsiz oyun haberlerini düzenli yapar
+    isActive: false,
   },
   {
     id: 'rockpapershotgun',
@@ -245,8 +323,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['oyun', 'inceleme', 'ücretsiz oyun'],
-    isActive: true,
-    // PC oyunlarına odaklı, Epic/Steam ücretsiz oyun haberlerini yakından takip eder
+    isActive: false,
   },
   {
     id: 'humblebundle_blog',
@@ -256,18 +333,7 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 5,
     categories: ['oyun', 'fırsat', 'ücretsiz oyun', 'bundle'],
-    isActive: true,
-    // Resmi Humble Bundle blogu — bundle ve ücretsiz oyun duyuruları için birincil kaynak
-  },
-  {
-    id: 'isthereanydeal',
-    name: 'IsThereAnyDeal',
-    url: 'https://isthereanydeal.com',
-    rssUrl: 'https://isthereanydeal.com/feed/',
-    lang: 'en',
-    reliability: 4,
-    categories: ['fırsat', 'indirim', 'ücretsiz oyun', 'fiyat takibi'],
-    isActive: false, // RSS 404 döndürüyor — resmi RSS desteği yok
+    isActive: false,
   },
   {
     id: 'eurogamer',
@@ -277,9 +343,9 @@ export const SOURCES: SourceConfig[] = [
     lang: 'en',
     reliability: 4,
     categories: ['oyun', 'fırsat', 'ücretsiz oyun', 'inceleme'],
-    isActive: true,
-    // Avrupa odaklı güçlü oyun habercisi, Epic/Steam ücretsiz oyun haberlerini kapsar
+    isActive: false,
   },
+  */
 ];
 
 export function getActiveSources(): SourceConfig[] {

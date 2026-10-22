@@ -92,11 +92,17 @@ export const NICHE_KEYWORDS = {
     'game ready driver', 'studio driver', 'sürücü güncellemesi',
   ],
 
-  // Yapay Zeka (AI)
+  // Yapay Zeka (AI), Açık Kaynak Modeller & Builder Araçları
   ai: [
-    'ai ', 'yapay zeka', 'chatgpt', 'openai', 'gemini', 'gpt-4', 'gpt-5', 'gpt-6',
+    'ai ', 'yapay zeka', 'chatgpt', 'openai', 'gemini', 'gpt',
     'copilot', 'claude', 'anthropic', 'midjourney', 'dall-e', 'stablediffusion', 'llama',
-    'npu', 'tensor', 'machine learning', 'deep learning', 'yapay zekâ', 'yapayzeka'
+    'npu', 'tensor', 'machine learning', 'deep learning', 'yapay zekâ', 'yapayzeka',
+    'deepseek', 'qwen', 'mistral', 'ollama', 'vllm', 'huggingface', 'open-source',
+    'open source', 'açık kaynak', 'open-weights', 'fine-tuning', 'rag', 'agent',
+    'mcp', 'context window', 'reasoning model', 'opencode', 'glm', 'kimi',
+    'whisper', 'flux', 'comfyui', 'llama.cpp', 'reverse engineering', 'modding',
+    'dev tools', 'developer tool', 'cli tool', 'github trending',
+    'sonnet', 'opus', 'haiku', 'computer use', 'model context protocol', 'fable'
   ],
 
   // Akıllı Telefon & Mobil Teknoloji
@@ -144,8 +150,12 @@ function hasKeywordMatch(text: string, keywords: readonly string[]): boolean {
 }
 
 export function detectCategory(text: string): ArticleCategory {
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.ai)) return 'ai';
   if (hasKeywordMatch(text, NICHE_KEYWORDS.gpu)) return 'gpu';
   if (hasKeywordMatch(text, NICHE_KEYWORDS.cpu)) return 'cpu';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.gaming)) return 'gaming';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.software)) return 'software';
+  if (hasKeywordMatch(text, NICHE_KEYWORDS.deals)) return 'deals';
   if (hasKeywordMatch(text, NICHE_KEYWORDS.mobile)) return 'mobile';
   if (hasKeywordMatch(text, NICHE_KEYWORDS.ram)) return 'ram';
   if (hasKeywordMatch(text, NICHE_KEYWORDS.storage)) return 'storage';
@@ -154,10 +164,6 @@ export function detectCategory(text: string): ArticleCategory {
   if (hasKeywordMatch(text, NICHE_KEYWORDS.peripherals)) return 'peripherals';
   if (hasKeywordMatch(text, NICHE_KEYWORDS.psu)) return 'psu';
   if (hasKeywordMatch(text, NICHE_KEYWORDS.case_pc)) return 'case';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.ai)) return 'ai';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.gaming)) return 'gaming';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.software)) return 'software';
-  if (hasKeywordMatch(text, NICHE_KEYWORDS.deals)) return 'deals';
 
   return 'general';
 }
