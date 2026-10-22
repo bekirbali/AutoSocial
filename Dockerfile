@@ -1,11 +1,11 @@
-﻿# ==========================================
+# ==========================================
 # 1. Base Stage: Ortak Sistem Bağımlılıkları
 # ==========================================
 FROM node:20-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+RUN npm install -g pnpm@9.15.0
 
 # FFmpeg, FFprobe ve Türkçe/Latin karakter destekli font paketleri
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,7 +25,7 @@ WORKDIR /app
 FROM base AS builder
 
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install
 
 COPY tsconfig.json drizzle.config.ts ./
 COPY src/ ./src/
@@ -45,7 +45,7 @@ ENV PORT=3000
 
 # Sadece production bağımlılıklarını kur
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod
 
 # Derlenmiş backend dosyalarını kopyala
 COPY --from=builder /app/dist ./dist
