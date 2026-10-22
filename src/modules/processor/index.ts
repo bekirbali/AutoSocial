@@ -167,8 +167,8 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
 
     try {
       // Yüksek çözünürlüklü görsel çözücü:
-      // RSS görselini yükseltir, gerekiyorsa OpenGraph çeker ve kalite kontrolü yapar
-      const resolvedImage = await resolveHighResImage(item.imageUrl, item.url);
+      // RSS görselini yükseltir, gerekiyorsa OpenGraph çeker, yoksa web fallback araması yapar
+      const resolvedImage = await resolveHighResImage(item.imageUrl, item.url, item.title);
 
       if (resolvedImage.url && resolvedImage.url !== item.imageUrl) {
         item.imageUrl = resolvedImage.url;
@@ -191,6 +191,7 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
         item.imageUrl,
         resolvedImage.buffer,
         item.url,
+        item.title,
       );
       imagePath = imageResult16x9.imagePath;
       imageSource = imageResult16x9.imageSource;

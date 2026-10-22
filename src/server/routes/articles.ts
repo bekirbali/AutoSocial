@@ -111,12 +111,18 @@ articlesRouter.get('/', async (req, res) => {
 // ─── 2. Makale Aksiyonları (Onayla / Sıraya Al / Reddet / Güncelle) ─────────────
 articlesRouter.post('/:id/action', async (req, res): Promise<void> => {
   const { id } = req.params;
-  const { action, tweetText, translatedTitle, targets = ['x'] } = req.body;
+  const { action, tweetText, translatedTitle, imageUrl, targets = ['x'] } = req.body;
 
   try {
     const [article] = await db
-      .select()
+      .select({
+        processed: processedArticles,
+        raw: rawArticles,
+        source: sources,
+      })
       .from(processedArticles)
+      .leftJoin(rawArticles, eq(processedArticles.rawArticleId, rawArticles.id))
+      .leftJoin(sources, eq(rawArticles.sourceId, sources.id))
       .where(eq(processedArticles.id, id))
       .limit(1);
 
@@ -211,7 +217,7 @@ articlesRouter.post('/:id/action', async (req, res): Promise<void> => {
     }
 
     if (action === 'update') {
-      // 4. Metin Güncelle
+      // 4. Metin ve Medya Güncelle
       const updates: Record<string, any> = { updatedAt: new Date() };
       if (tweetText !== undefined) updates.tweetText = tweetText.trim();
       if (translatedTitle !== undefined) updates.translatedTitle = translatedTitle.trim();
@@ -221,10 +227,40 @@ articlesRouter.post('/:id/action', async (req, res): Promise<void> => {
         .set(updates)
         .where(eq(processedArticles.id, id));
 
+      if (imageUrl !== undefined && article.raw?.id) {
+        await db
+          .update(rawArticles)
+          .set({ imageUrl: imageUrl ? imageUrl.trim() : null })
+          .where(eq(rawArticles.id, article.raw.id))
+          .catch((e) => log.warn({ err: e.message }, 'rawArticles imageUrl güncellenemedi'));
+
+        // Kartı da otomatik yeniden render et
+        try {
+          const cardResult = await generateNewsCard(
+            updates.translatedTitle || article.processed.translatedTitle,
+            article.source?.name || 'Haber',
+            (article.processed.category as any) || 'general',
+            article.raw.publishedAt || article.processed.createdAt,
+            article.raw.id,
+            '16:9',
+            imageUrl ? imageUrl.trim() : null,
+            null,
+            article.raw.url,
+            article.raw.title,
+          );
+          await db
+            .update(processedArticles)
+            .set({ imagePath: cardResult.imagePath, imageSource: cardResult.imageSource })
+            .where(eq(processedArticles.id, id));
+        } catch (err: any) {
+          log.warn({ err: err.message }, 'Makale güncelleme sonrası kart render başarısız');
+        }
+      }
+
       // Telegram onay mesajını senkronize et
       syncArticleStatusToTelegram(id, 'updated', { newText: tweetText }).catch(() => {});
 
-      log.info({ articleId: id }, 'Makale metinleri güncellendi');
+      log.info({ articleId: id }, 'Makale metinleri ve medyası güncellendi');
       res.json({ success: true, message: 'Makale başarıyla güncellendi' });
       return;
     }
@@ -287,7 +323,15 @@ articlesRouter.post('/:id/render-card', async (req, res): Promise<void> => {
     }
 
     const effectiveTitle = title || article.processed.translatedTitle;
-    const effectiveImage = imageUrl || article.raw.imageUrl;
+    const effectiveImage = imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : article.raw.imageUrl;
+
+    if (imageUrl !== undefined) {
+      await db
+        .update(rawArticles)
+        .set({ imageUrl: effectiveImage })
+        .where(eq(rawArticles.id, article.raw.id))
+        .catch((e) => log.warn({ err: e.message }, 'rawArticles imageUrl güncellenemedi'));
+    }
 
     const result = await generateNewsCard(
       effectiveTitle,
@@ -297,6 +341,9 @@ articlesRouter.post('/:id/render-card', async (req, res): Promise<void> => {
       article.raw.id,
       '16:9',
       effectiveImage,
+      null,
+      article.raw.url,
+      article.raw.title,
     );
 
     // processedArticles tablosunu güncelle
@@ -317,6 +364,35 @@ articlesRouter.post('/:id/render-card', async (req, res): Promise<void> => {
     });
   } catch (error: any) {
     log.error({ err: error.message, id }, 'Kart render hatası');
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─── 4. Makale İçin Web'den Önerilen Görselleri Ara ─────────────────────────────
+articlesRouter.get('/:id/suggested-images', async (req, res): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const [article] = await db
+      .select({
+        processed: processedArticles,
+        raw: rawArticles,
+      })
+      .from(processedArticles)
+      .innerJoin(rawArticles, eq(processedArticles.rawArticleId, rawArticles.id))
+      .where(eq(processedArticles.id, id))
+      .limit(1);
+
+    if (!article) {
+      res.status(404).json({ success: false, error: 'Makale bulunamadı' });
+      return;
+    }
+
+    const { searchFallbackImages } = await import('../../modules/processor/downloader.js');
+    const query = (article.raw.title || article.processed.translatedTitle || '').trim();
+    const suggestions = await searchFallbackImages(query, 6);
+    res.json({ success: true, suggestions });
+  } catch (error: any) {
+    log.error({ err: error.message, id }, 'Önerilen görsel arama hatası');
     res.status(500).json({ success: false, error: error.message });
   }
 });

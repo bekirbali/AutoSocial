@@ -11,9 +11,10 @@ import {
   RefreshCw,
   Star,
   Undo2,
+  Sparkles,
 } from 'lucide-react';
 import type { ArticleItem } from '../types/api';
-import { postArticleAction, reRenderCard } from '../lib/api';
+import { postArticleAction, reRenderCard, fetchSuggestedImages } from '../lib/api';
 
 interface KanbanViewProps {
   articles: ArticleItem[];
@@ -25,6 +26,9 @@ export const KanbanView: React.FC<KanbanViewProps> = ({ articles, onRefresh }) =
   const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editTitle, setEditTitle] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [suggestedImages, setSuggestedImages] = useState<Array<{ url: string; width?: number; height?: number }>>([]);
+  const [isFindingImages, setIsFindingImages] = useState(false);
   const [isActing, setIsActing] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
 
@@ -53,6 +57,8 @@ export const KanbanView: React.FC<KanbanViewProps> = ({ articles, onRefresh }) =
     setActiveModalArticle(article);
     setEditText(article.tweetText);
     setEditTitle(article.translatedTitle || article.rawTitle);
+    setEditImageUrl(article.rawImageUrl || '');
+    setSuggestedImages([]);
   };
 
   const handleSaveEdit = async () => {
@@ -62,6 +68,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({ articles, onRefresh }) =
       await postArticleAction(activeModalArticle.id, 'update', {
         tweetText: editText,
         translatedTitle: editTitle,
+        imageUrl: editImageUrl,
       });
       setActiveModalArticle(null);
       await onRefresh();
@@ -72,23 +79,42 @@ export const KanbanView: React.FC<KanbanViewProps> = ({ articles, onRefresh }) =
     }
   };
 
-  const handleReRenderCard = async () => {
+  const handleReRenderCard = async (overrideImageUrl?: string) => {
     if (!activeModalArticle) return;
     try {
       setIsRendering(true);
+      const targetImg = overrideImageUrl !== undefined ? overrideImageUrl : editImageUrl;
       const newCardUrl = await reRenderCard(activeModalArticle.id, {
         title: editTitle,
+        imageUrl: targetImg,
       });
       setActiveModalArticle({
         ...activeModalArticle,
         cardImageUrl: newCardUrl,
         translatedTitle: editTitle,
+        rawImageUrl: targetImg,
       });
       await onRefresh();
     } catch (err: any) {
       alert(`Kart render hatası: ${err.message}`);
     } finally {
       setIsRendering(false);
+    }
+  };
+
+  const handleFindWebImages = async () => {
+    if (!activeModalArticle) return;
+    try {
+      setIsFindingImages(true);
+      const results = await fetchSuggestedImages(activeModalArticle.id);
+      setSuggestedImages(results);
+      if (results.length === 0) {
+        alert('Bu haber konusu için uygun alternatif görsel bulunamadı.');
+      }
+    } catch (err: any) {
+      alert(`Görsel arama hatası: ${err.message}`);
+    } finally {
+      setIsFindingImages(false);
     }
   };
 
@@ -515,7 +541,7 @@ export const KanbanView: React.FC<KanbanViewProps> = ({ articles, onRefresh }) =
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
               {/* Kart Önizleme */}
               {activeModalArticle.cardImageUrl && (
                 <div>
@@ -538,6 +564,82 @@ export const KanbanView: React.FC<KanbanViewProps> = ({ articles, onRefresh }) =
                 </div>
               )}
 
+              {/* Medya / Görsel Yönetimi */}
+              <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                    Arka Plan Görseli (Medya URL)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleFindWebImages}
+                    disabled={isFindingImages}
+                    className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer disabled:opacity-50 transition"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>{isFindingImages ? 'Aranıyor...' : 'Görsel Bul'}</span>
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={editImageUrl}
+                    onChange={(e) => setEditImageUrl(e.target.value)}
+                    placeholder="https://... görsel URL'si yapıştırın"
+                    className="flex-1 px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleReRenderCard()}
+                    disabled={isRendering}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-50 shrink-0 border border-slate-700/60"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRendering ? 'animate-spin text-cyan-400' : ''}`} />
+                    <span>Kartı Yenile</span>
+                  </button>
+                </div>
+
+                {/* Önerilen Web Görselleri */}
+                {suggestedImages.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[11px] text-slate-400 font-medium block">
+                      Web Önerileri (Seçip uygulamak için tıkla):
+                    </span>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                      {suggestedImages.map((s, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setEditImageUrl(s.url);
+                            handleReRenderCard(s.url);
+                          }}
+                          className={`relative rounded-lg overflow-hidden border aspect-video cursor-pointer transition group ${
+                            editImageUrl === s.url
+                              ? 'border-cyan-400 ring-2 ring-cyan-500/40'
+                              : 'border-slate-800 hover:border-slate-600'
+                          }`}
+                        >
+                          <img
+                            src={s.url}
+                            alt="Öneri"
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
+                            loading="lazy"
+                          />
+                          {editImageUrl === s.url && (
+                            <div className="absolute inset-0 bg-cyan-600/30 backdrop-blur-[1px] flex items-center justify-center">
+                              <Check className="w-4 h-4 text-white drop-shadow" />
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Kart Başlığı */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -545,12 +647,12 @@ export const KanbanView: React.FC<KanbanViewProps> = ({ articles, onRefresh }) =
                     Kart Üzerindeki Başlık (Sharp TR)
                   </label>
                   <button
-                    onClick={handleReRenderCard}
+                    onClick={() => handleReRenderCard()}
                     disabled={isRendering}
                     className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3 h-3 ${isRendering ? 'animate-spin' : ''}`} />
-                    Kartı Yenile (Render)
+                    Kartı Yenile
                   </button>
                 </div>
                 <input

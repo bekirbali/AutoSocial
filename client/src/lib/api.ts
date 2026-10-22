@@ -27,7 +27,7 @@ export async function fetchArticles(status?: string): Promise<ArticleItem[]> {
 export async function postArticleAction(
   id: string,
   action: 'publish_now' | 'schedule' | 'reject' | 'update' | 'pre_approve' | 'un_pre_approve',
-  payload?: { tweetText?: string; translatedTitle?: string; reason?: string },
+  payload?: { tweetText?: string; translatedTitle?: string; imageUrl?: string; reason?: string },
 ): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_BASE}/articles/${id}/action`, {
     method: 'POST',
@@ -37,6 +37,15 @@ export async function postArticleAction(
   const json = await res.json();
   if (!json.success) throw new Error(json.error || 'Aksiyon uygulanamadı');
   return json;
+}
+
+export async function fetchSuggestedImages(
+  articleId: string,
+): Promise<Array<{ url: string; width?: number; height?: number }>> {
+  const res = await fetch(`${API_BASE}/articles/${articleId}/suggested-images`);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'Önerilen görseller alınamadı');
+  return json.suggestions || [];
 }
 
 export async function reRenderCard(

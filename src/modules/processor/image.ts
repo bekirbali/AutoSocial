@@ -37,6 +37,7 @@ export async function generateNewsCard(
   imageUrl?: string | null,
   preloadedBuffer?: Buffer | null,
   articleUrl?: string | null,
+  articleTitle?: string | null,
 ): Promise<ImageGenerationResult> {
   // Çıktı klasörünü oluştur
   if (!existsSync(OUTPUT_DIR)) {
@@ -51,8 +52,8 @@ export async function generateNewsCard(
   const colors = CATEGORY_COLORS[category];
 
   let downloadedImageBuffer: Buffer | null = preloadedBuffer ?? null;
-  if (!downloadedImageBuffer && (imageUrl || articleUrl)) {
-    const resolved = await resolveHighResImage(imageUrl, articleUrl);
+  if (!downloadedImageBuffer && (imageUrl || articleUrl || articleTitle)) {
+    const resolved = await resolveHighResImage(imageUrl, articleUrl, articleTitle || title);
     downloadedImageBuffer = resolved.buffer;
   }
 
@@ -169,8 +170,8 @@ export async function generateDigestSlideCard(
 
   const colors = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.general;
   let downloadedImageBuffer: Buffer | null = preloadedBuffer ?? null;
-  if (!downloadedImageBuffer && (imageUrl || articleUrl)) {
-    const resolved = await resolveHighResImage(imageUrl, articleUrl);
+  if (!downloadedImageBuffer && (imageUrl || articleUrl || title)) {
+    const resolved = await resolveHighResImage(imageUrl, articleUrl, title);
     downloadedImageBuffer = resolved.buffer;
   }
 

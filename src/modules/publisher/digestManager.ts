@@ -231,7 +231,7 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
     let slideImageBuffer: Buffer | null = null;
     try {
       const { resolveHighResImage } = await import('../processor/downloader.js');
-      const resolved = await resolveHighResImage(slideImageUrl, item.rawUrl);
+      const resolved = await resolveHighResImage(slideImageUrl, item.rawUrl, turkishTitle || item.rawTitle);
       if (resolved.url && resolved.url !== slideImageUrl) {
         slideImageUrl = resolved.url;
         await db

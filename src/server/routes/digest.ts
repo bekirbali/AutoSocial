@@ -195,7 +195,7 @@ digestRouter.post('/compose', async (req, res): Promise<void> => {
       let slideImageBuffer: Buffer | null = null;
       try {
         const { resolveHighResImage } = await import('../../modules/processor/downloader.js');
-        const resolved = await resolveHighResImage(slideImageUrl, item.rawUrl);
+        const resolved = await resolveHighResImage(slideImageUrl, item.rawUrl, turkishTitle || item.rawTitle);
         if (resolved.url && resolved.url !== slideImageUrl) {
           slideImageUrl = resolved.url;
           await db
