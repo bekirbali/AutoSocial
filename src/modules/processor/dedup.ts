@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { redis } from '../../lib/redis.js';
 import { db } from '../../db/index.js';
-import { rawArticles } from '../../db/schema.js';
+import { rawArticles, processedArticles } from '../../db/schema.js';
 import { eq, gte, sql } from 'drizzle-orm';
 import { createLogger } from '../../lib/logger.js';
 
@@ -19,31 +19,43 @@ export function hashUrl(url: string): string {
 }
 
 /**
- * Duplicate kontrolü — sıralı 2 katmanlı kontrol:
- * 1. Redis'te URL hash var mı? (O(1), hızlı)
- * 2. PostgreSQL'de URL var mı? (Redis'in sıfırlandığı durumlar için)
+ * Duplicate kontrolü — Sıralı 2 katmanlı akıllı kontrol:
+ * 1. DB kontrolü (Nihai gerçeklik): Yalnızca processed_articles tablosuna başarıyla
+ *    yazılmış makaleler gerçek duplicate sayılır. Eğer raw_articles'ta var ama
+ *    processed_articles'ta yoksa, önceki bir denemede işlem yarım kalmıştır;
+ *    duplicate sayılmaz, Redis kilidi silinir ve tekrar denenir.
+ * 2. Redis kontrolü: DB'de raw kaydı olmayan ama filtrede elenmiş URL'ler.
  */
 export async function isDuplicate(url: string): Promise<boolean> {
   const hash = hashUrl(url);
   const redisKey = `${URL_HASH_PREFIX}${hash}`;
 
-  // Katman 1: Redis kontrolü
+  // Katman 1: DB Kontrolü
+  const rawArticle = await db.query.rawArticles
+    .findFirst({ where: eq(rawArticles.urlHash, hash) })
+    .catch(() => null);
+
+  if (rawArticle) {
+    const processed = await db.query.processedArticles
+      .findFirst({ where: eq(processedArticles.rawArticleId, rawArticle.id) })
+      .catch(() => null);
+
+    if (processed) {
+      log.debug({ url, hash }, 'Duplicate tespit edildi (DB: İşlenmiş makale mevcut)');
+      await redis.setex(redisKey, URL_HASH_TTL_SECONDS, '1');
+      return true;
+    } else {
+      // raw_articles'ta var ama processed_articles'a girememiş (yarım kalmış/hata almış)
+      log.info({ url, hash }, 'Öksüz/yarım kalmış makale tespit edildi, tekrar işleme açılıyor');
+      await redis.del(redisKey).catch(() => {});
+      return false;
+    }
+  }
+
+  // Katman 2: Redis kontrolü (DB'de hiç yok ama filtrede/skorda elenmiş olanlar)
   const existsInRedis = await redis.exists(redisKey);
   if (existsInRedis) {
     log.debug({ url, hash }, 'Duplicate tespit edildi (Redis)');
-    return true;
-  }
-
-  // Katman 2: DB kontrolü (Redis sıfırlanmış olabilir)
-  const existsInDb = await db.query.rawArticles
-    .findFirst({ where: eq(rawArticles.urlHash, hash) })
-    .then((r) => !!r)
-    .catch(() => false);
-
-  if (existsInDb) {
-    log.debug({ url, hash }, 'Duplicate tespit edildi (DB)');
-    // Redis'e ekle (cache yenile)
-    await redis.setex(redisKey, URL_HASH_TTL_SECONDS, '1');
     return true;
   }
 

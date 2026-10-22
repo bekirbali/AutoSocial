@@ -79,26 +79,48 @@ export async function processArticle(item: FetchedItem): Promise<ProcessResult> 
 
     // ─── ADIM 5: Ham Makaleyi DB'ye Kaydet ───────────────────────────────────
     const urlHash = hashUrl(item.url);
-    const [rawArticle] = await db
-      .insert(rawArticles)
-      .values({
-        sourceId: await getDbSourceId(item.sourceId),
-        url: item.url,
-        urlHash,
-        title: item.title,
-        summary: item.summary,
-        imageUrl: item.imageUrl,
-        publishedAt: item.publishedAt,
-        lang: item.lang,
-        categories: detectCategory(item.title + ' ' + (item.summary ?? '')).split(','),
-      })
-      .onConflictDoNothing()
-      .returning();
+    let rawArticle = (
+      await db
+        .insert(rawArticles)
+        .values({
+          sourceId: await getDbSourceId(item.sourceId),
+          url: item.url,
+          urlHash,
+          title: item.title,
+          summary: item.summary,
+          imageUrl: item.imageUrl,
+          publishedAt: item.publishedAt,
+          lang: item.lang,
+          categories: detectCategory(item.title + ' ' + (item.summary ?? '')).split(','),
+        })
+        .onConflictDoNothing()
+        .returning()
+    )[0];
 
     if (!rawArticle) {
-      // Conflict — aynı URL zaten var (race condition)
-      await markAsProcessed(item.url);
-      return { url: item.url, status: 'duplicate', reason: 'db_conflict' };
+      // Conflict — URL zaten rawArticles tablosunda kayıtlı
+      const existingRaw = await db.query.rawArticles.findFirst({
+        where: eq(rawArticles.urlHash, urlHash),
+      });
+
+      if (existingRaw) {
+        // Eğer bu rawArticle zaten başarıyla işlenip processedArticles'a girmişse gerçek duplicate'tir
+        const alreadyProcessed = await db.query.processedArticles.findFirst({
+          where: eq(processedArticles.rawArticleId, existingRaw.id),
+        });
+
+        if (alreadyProcessed) {
+          await markAsProcessed(item.url);
+          return { url: item.url, status: 'duplicate', reason: 'already_processed' };
+        }
+
+        // processedArticles'ta YOKSA -> Önceki bir hata yüzünden yarım kalmıştır; kurtar ve devam et!
+        log.info({ ...logCtx, rawId: existingRaw.id }, 'Yarım kalmış ham makale kurtarıldı, işleme devam ediliyor');
+        rawArticle = existingRaw;
+      } else {
+        await markAsProcessed(item.url);
+        return { url: item.url, status: 'duplicate', reason: 'db_conflict' };
+      }
     }
 
     // ─── ADIM 6: Kategori Tespiti ────────────────────────────────────────────
