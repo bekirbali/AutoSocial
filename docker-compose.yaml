@@ -53,7 +53,7 @@ services:
     env_file:
       - .env
     ports:
-      - "3000:3000"
+      - "3005:3000"
     volumes:
       - ./output:/app/output
     command: sh -c "pnpm db:migrate && node dist/main.js"
