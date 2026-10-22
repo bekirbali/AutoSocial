@@ -33,6 +33,9 @@ COPY src/ ./src/
 # Backend TypeScript derlemesini çalıştır -> dist/main.js
 RUN pnpm run build
 
+# Sadece production bağımlılıklarını bırak (devDependencies temizlenir)
+RUN pnpm prune --prod
+
 # ==========================================
 # 3. Production Runner Stage
 # ==========================================
@@ -43,11 +46,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Sadece production bağımlılıklarını kur
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod
-
-# Derlenmiş backend dosyalarını kopyala
+# Builder stage'den hazır production paketlerini ve derlenmiş dosyaları kopyala
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 # Hazır derlenmiş Frontend Admin Panelini kopyala
