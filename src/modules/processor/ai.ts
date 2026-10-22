@@ -116,6 +116,36 @@ function safeParseJson<T>(rawText: string, fallbackErrorMsg = 'Gemini geçersiz 
   }
 }
 
+/**
+ * Tweet metnini 280 karakter sınırına göre akıllıca kırpar.
+ * Asla kelimenin ortasından veya yarım kalmış ifadeden kesmez;
+ * 280 karakter sınırı içindeki son tam cümle bitişini (. ! ?) esas alır.
+ */
+export function smartTruncateTweet(text: string, maxLen: number = 280): string {
+  if (text.length <= maxLen) return text;
+
+  const candidate = text.substring(0, maxLen);
+
+  // Cümle sonu işaretleri (. ! ?), peşinden boşluk/satır sonu gelen veya metnin sonunda olan
+  // Ondalık sayıları (9.2 gibi) hariç tutmak için (?<!\d) kontrolü:
+  const matches = [...candidate.matchAll(/(?<!\d)[.!?](?=\s|$)/g)];
+  if (matches.length > 0) {
+    const lastMatch = matches[matches.length - 1]!;
+    const endIdx = lastMatch.index! + 1; // Noktayı/ünlemi dahil et
+    if (endIdx >= 170) {
+      return candidate.substring(0, endIdx).trim();
+    }
+  }
+
+  // Cümle sonu çok gerideyse kelimeyi ortadan bölme, son kelime boşluğundan kesip üç nokta koy
+  const lastSpace = candidate.lastIndexOf(' ');
+  if (lastSpace >= 170) {
+    return candidate.substring(0, lastSpace).trim() + '...';
+  }
+
+  return candidate.trim();
+}
+
 export interface TweetGenerationResult {
   tweetText: string;
   imageHook: string;
@@ -208,7 +238,7 @@ KESİN YASAKLAR (YAPAY ZEKA VE KALIP YASAKLARI):
 - EMOJİ KİRLİLİĞİ VE İKONLAR YASAKTIR: Metin içinde "💡", "💬", "👇", "🚀", "⚡️" gibi robotik yapay zeka emojileri KULLANMA. Metin tamamen doğal insan yazısı gibi durmalıdır.
 - ETİKET YASAKTIR: "Cebe Etkisi:", "Özet:", "Yorum:", "Haber:" gibi başlık kalıpları yazma.
 - PARAGRAF SINIRI: Metin kesinlikle 3 veya 4 paragrafa bölünmemeli, tam olarak 2 paragraf olmalıdır.
-- KARAKTER SINIRI: Tweet maksimum 270 karakter olmalıdır.
+- KARAKTER SINIRI: Tweet maksimum 275 karakter olmalıdır. Asla 275 karakteri aşma.
 - HASHTAG KESİNLİKLE YASAKTIR (# sembolü kullanma).
 - THREAD/FLOOD YASAKTIR ("detaylar aşağıda", "devamı yorumda" gibi kalıplar yasaktır).
 - GÖRSEL İÇİN KANCA (imageHook): Görselin üzerine basılacak en fazla 3-5 KELİMELİK dev, vurucu bir kanca (Örn: "Orta Segmente Amiral Gemisi Gücü", "1000 Dolar Altı Devrim").
@@ -277,15 +307,15 @@ Sadece JSON döndür.`;
 
     const hashtags: string[] = []; // Hashtag'ler tamamen kaldırıldı
 
-    // Karakter uzunluğu kontrolü
+    // Karakter uzunluğu kontrolü ve akıllı kırpma (cümle/kelime bütünlüğü korunur)
     if (tweetText.length > 280) {
       log.warn(
         { length: tweetText.length, title },
-        'Tweet metni 280 sınırı için güvenli sınıra alınıyor',
+        'Tweet metni 280 sınırı için akıllı cümle sonuna hizalanıyor',
       );
     }
 
-    const finalTweet = tweetText.substring(0, 280);
+    const finalTweet = smartTruncateTweet(tweetText, 280);
     const imageHook = (parsed.imageHook || parsed.translatedTitle || title).replace(/[#*`]/g, '').trim();
 
     log.info(
