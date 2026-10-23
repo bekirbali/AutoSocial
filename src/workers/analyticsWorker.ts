@@ -31,9 +31,17 @@ async function analyticsJob(job: Job<AnalyticsJobData>): Promise<void> {
   }
 
   if (job.name === 'daily-digest' || job.name === 'evening-digest' || job.name === 'noon-digest') {
-    const { createDailyDigest } = await import('../modules/publisher/digestManager.js');
-    await createDailyDigest('evening');
-    log.info({ jobId: job.id }, '✅ Günün Raporu (19:00) job tamamlandı');
+    try {
+      const { createDailyDigest } = await import('../modules/publisher/digestManager.js');
+      const result = await createDailyDigest('evening');
+      if (result) {
+        log.info({ jobId: job.id, digestId: result.id }, '✅ Günün Raporu (19:00) job tamamlandı');
+      } else {
+        log.info({ jobId: job.id }, 'ℹ️ Günün Raporu (19:00) Reels için yeterli yeni haber olmadığından atlandı');
+      }
+    } catch (err: any) {
+      log.error({ jobId: job.id, err: err.message }, '⚠️ Günün Raporu job hatası (kontrollü yakalandı)');
+    }
     return;
   }
 

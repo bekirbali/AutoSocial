@@ -7,13 +7,17 @@ import {
   type AnalyticsJobData,
   type PublishJobData,
 } from '../lib/queue.js';
-import { generateDailySchedule, getTodayPublishedCount } from '../modules/publisher/scheduler.js';
+import {
+  generateDailySchedule,
+  getTodayPublishedCount,
+  getTurkeyDayBounds,
+} from '../modules/publisher/scheduler.js';
 import { cleanupOldMedia } from './cleanup.js';
 import { getDynamicSetting } from '../lib/settings.js';
 import { env } from '../config/env.js';
 import { db } from '../db/index.js';
-import { processedArticles } from '../db/schema.js';
-import { eq, and, gte } from 'drizzle-orm';
+import { processedArticles, publishedTweets } from '../db/schema.js';
+import { eq, and, gte, desc } from 'drizzle-orm';
 
 const log = createLogger('scheduler:cron');
 
@@ -125,7 +129,6 @@ export async function schedulePublishJobs(): Promise<void> {
   await cleanupOldMedia(7).catch(e => log.error({ err: e.message }, 'Cleanup hatası'));
 
   const maxTweets = await getDynamicSetting('max_tweets_per_day', env.MAX_TWEETS_PER_DAY);
-  const schedule = generateDailySchedule(new Date(), maxTweets);
   const todayCount = await getTodayPublishedCount();
 
   if (todayCount >= maxTweets) {
@@ -133,11 +136,10 @@ export async function schedulePublishJobs(): Promise<void> {
     return;
   }
 
-  const remainingSlots = schedule.slice(todayCount);
+  const remainingQuota = maxTweets - todayCount;
 
-  // Henüz zamanlanmamış onaylı makaleleri çek
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Henüz zamanlanmamış onaylı makaleleri çek (Bugün Türkiye saatiyle eklenenler)
+  const { startOfDay } = getTurkeyDayBounds();
 
   const pendingArticles = await db
     .select({ id: processedArticles.id })
@@ -145,16 +147,16 @@ export async function schedulePublishJobs(): Promise<void> {
     .where(
       and(
         eq(processedArticles.status, 'approved'),
-        gte(processedArticles.createdAt, today),
+        gte(processedArticles.createdAt, startOfDay),
       ),
     )
     .orderBy(processedArticles.createdAt)
-    .limit(remainingSlots.length);
+    .limit(remainingQuota);
 
   let scheduled = 0;
-  for (let i = 0; i < pendingArticles.length && i < remainingSlots.length; i++) {
+  for (let i = 0; i < pendingArticles.length; i++) {
     const article = pendingArticles[i]!;
-    const publishAt = remainingSlots[i]!;
+    const publishAt = await getNextPublishSlot();
     const delayMs = Math.max(0, publishAt.getTime() - Date.now());
 
     const jobData: PublishJobData = {
@@ -171,77 +173,128 @@ export async function schedulePublishJobs(): Promise<void> {
   }
 
   log.info(
-    { scheduled, availableSlots: remainingSlots.length, pendingArticles: pendingArticles.length },
-    '📅 Günlük publish planı hazır',
+    { scheduled, pendingArticles: pendingArticles.length, remainingQuota },
+    '📅 Günlük publish planı dinamik kuyrukla hazırlandı',
   );
 }
 
 /**
- * Bir sonraki boş publish slotunu döndür
- * processWorker tarafından her yeni işlenen makale için kullanılır
+ * Bir sonraki yayın zamanını Dinamik Kayan Kuyruk (Rolling Dynamic Queue) mantığıyla hesaplar:
+ * 1. Baz Zaman: max(Şu An, Son Tweet Zamanı, Kuyruktaki En Son Hedef Zaman)
+ * 2. Doğal Aralık Ekle: Baz zaman üzerine 35-50 dakika (+ ufak jitter) ekle.
+ * 3. Gece Sessizlik Penceresi (Quiet Hours: 23:30 - 07:30 TR Saati):
+ *    - Eğer hedef zaman gece uyku saatine denk geliyorsa, doğrudan sabah 07:35 - 08:30 aralığına ötele.
+ *    - Gece birden fazla haber sıraya alınırsa, sabah kuşağında ardışık olarak (35-50 dk arayla) diz.
  */
 export async function getNextPublishSlot(): Promise<Date> {
-  const schedule = generateDailySchedule();
-  const todayCount = await getTodayPublishedCount();
-  
-  // Kuyruktaki delayed (bekleyen) işleri al
-  const delayedJobs = await publishQueue.getDelayed();
-  
-  // Bugün için planlanmış olanların sayısını ve kuyruktaki EN İLERİ zamanı bul
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart);
-  todayEnd.setDate(todayEnd.getDate() + 1);
+  const now = Date.now();
 
-  let queuedForTodayCount = 0;
+  // 1. Son yayınlanan tweet zamanını DB'den al
+  let lastPublishedTime = 0;
+  try {
+    const [lastPublished] = await db
+      .select({ publishedAt: publishedTweets.publishedAt })
+      .from(publishedTweets)
+      .orderBy(desc(publishedTweets.publishedAt))
+      .limit(1);
+
+    if (lastPublished?.publishedAt) {
+      lastPublishedTime = new Date(lastPublished.publishedAt).getTime();
+    }
+  } catch (err: any) {
+    log.warn({ err: err.message }, 'Son yayınlanan tweet zamanı sorgulanamadı');
+  }
+
+  // 2. Kuyruktaki bekleyen (delayed) işler arasındaki EN İLERİ zamanı bul
   let lastScheduledTime = 0;
+  try {
+    const delayedJobs = await publishQueue.getDelayed();
+    for (const job of delayedJobs) {
+      if (job.data && job.data.scheduledFor) {
+        const time = new Date(job.data.scheduledFor).getTime();
+        if (time > lastScheduledTime) {
+          lastScheduledTime = time;
+        }
+      }
+    }
+  } catch (err: any) {
+    log.warn({ err: err.message }, 'Kuyruktaki gecikmeli işler taranamadı');
+  }
 
-  for (const job of delayedJobs) {
-    if (job.data && job.data.scheduledFor) {
-      const scheduledTime = new Date(job.data.scheduledFor).getTime();
-      if (scheduledTime >= todayStart.getTime() && scheduledTime < todayEnd.getTime()) {
-        queuedForTodayCount++;
-      }
-      if (scheduledTime > lastScheduledTime) {
-        lastScheduledTime = scheduledTime;
-      }
+  // 3. Baz Zaman = En son aksiyonun zamanı
+  // (Örn: Son tweet 10 dk önce atılmışsa o tweet baz alınır; 2 saat önce atılmışsa şimdiki an baz alınır)
+  const baseTime = Math.max(now, lastPublishedTime, lastScheduledTime);
+
+  // 4. Doğal Aralık: 35 - 50 dakika (ortalama ~42 dakika)
+  const minIntervalMinutes = 35;
+  const jitterMinutes = Math.floor(Math.random() * 15); // 0-14 dk
+  const intervalMs = (minIntervalMinutes + jitterMinutes) * 60 * 1000;
+
+  let proposedTime = new Date(baseTime + intervalMs);
+
+  // 5. Türkiye Saat Dilimine Göre Gece Sessizlik Kontrolü (23:30 - 07:30)
+  const trParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(proposedTime);
+
+  const getPart = (type: string) => trParts.find((p) => p.type === type)?.value ?? '0';
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = getPart('day');
+  const hour = parseInt(getPart('hour'), 10);
+  const minute = parseInt(getPart('minute'), 10);
+
+  const isQuietHours = (hour === 23 && minute >= 30) || (hour >= 0 && hour < 7) || (hour === 7 && minute < 30);
+
+  if (isQuietHours) {
+    // Gece 23:30 sonrası ise ertesi sabah, 00:00 - 07:30 arası ise bugünün sabahı
+    let morningDateStr = `${year}-${month}-${day}`;
+    if (hour === 23 && minute >= 30) {
+      const nextDay = new Date(proposedTime.getTime() + 12 * 60 * 60 * 1000);
+      morningDateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Istanbul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(nextDay);
+    }
+
+    // Sabah 07:35 başlangıç tabanı (TR saati)
+    const morningBase = new Date(`${morningDateStr}T07:35:00.000+03:00`).getTime();
+
+    // Eğer kuyrukta o sabah için zaten bir haber planlanmışsa onun sonrasına 35-50 dk ekle
+    if (lastScheduledTime >= morningBase) {
+      const morningIntervalMs = (35 + Math.floor(Math.random() * 15)) * 60 * 1000;
+      proposedTime = new Date(lastScheduledTime + morningIntervalMs);
+    } else {
+      // Sabahın ilk haberi: 07:35 + (0-10 dk jitter)
+      const morningJitterMs = Math.floor(Math.random() * 10) * 60 * 1000;
+      proposedTime = new Date(morningBase + morningJitterMs);
     }
   }
 
-  const totalToday = todayCount + queuedForTodayCount;
-  let proposedSlot: Date | null = null;
-
-  // Bugünkü planın dolmamış ve gelecekte olan ilk slotunu bul
-  for (let i = totalToday; i < schedule.length; i++) {
-    const slot = schedule[i];
-    if (slot && slot.getTime() > Date.now()) {
-      proposedSlot = slot;
-      break;
-    }
+  // 6. Nihai Güvenlik Kontrolü: Kuyruktaki son işten veya son tweet'ten en az 30 dk sonra olmalı
+  const strictMinAllowed = Math.max(now, lastScheduledTime, lastPublishedTime) + 30 * 60 * 1000;
+  if (proposedTime.getTime() < strictMinAllowed) {
+    proposedTime = new Date(strictMinAllowed + Math.floor(Math.random() * 5) * 60 * 1000);
   }
 
-  // Plan doldu veya geçmiş saatte — yarın sabah 07:00'a ata
-  if (!proposedSlot) {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(12, 0, 0, 0);
+  log.info(
+    {
+      proposedSlot: proposedTime.toISOString(),
+      turkeyTime: proposedTime.toLocaleTimeString('tr-TR', { timeZone: 'Europe/Istanbul' }),
+      baseRef: new Date(baseTime).toLocaleTimeString('tr-TR', { timeZone: 'Europe/Istanbul' }),
+    },
+    '🎯 Dinamik Kayan Kuyruk yayın zamanı belirlendi',
+  );
 
-    const jitter = (Math.random() * 24 - 12) * 60 * 1000;
-    proposedSlot = new Date(tomorrow.getTime() + jitter);
-  }
-
-  // Çarpışma Önleme (Collision & Min Interval)
-  // Eğer önerilen zaman (proposedSlot), sıradaki en son hedeften en az 30 dk sonra değilse, onu ileri it.
-  const minIntervalMs = 30 * 60 * 1000; // 30 dakika
-  const minimumAllowedTime = Math.max(Date.now(), lastScheduledTime) + minIntervalMs;
-
-  if (proposedSlot.getTime() < minimumAllowedTime) {
-    // Biraz jitter ekleyerek aynı düz saatlere (örn: 07:30, 08:00) yığılmasını engelle
-    const jitter = (Math.random() * 10 - 5) * 60 * 1000; // ±5 dk
-    return new Date(minimumAllowedTime + jitter);
-  }
-
-  return proposedSlot;
+  return proposedTime;
 }
 
 /**

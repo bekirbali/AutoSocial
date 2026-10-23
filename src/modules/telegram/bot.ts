@@ -838,3 +838,20 @@ export async function sendDigestApprovalRequest(data: DigestApprovalData): Promi
     return false;
   }
 }
+
+/**
+ * Günlük bülten veya video oluşturma hatalarını Telegram üzerinden yöneticiye bildirir.
+ */
+export async function sendDigestErrorReport(errorMessage: string): Promise<void> {
+  if (!bot || !env.TELEGRAM_CHAT_ID) return;
+  try {
+    await bot.telegram.sendMessage(
+      env.TELEGRAM_CHAT_ID,
+      `⚠️ <b>TeknoFiltre Reels Bülten Uyarısı</b>\n\nGünün Raporu Reels videosu derlenirken bir hata oluştu:\n<code>${errorMessage}</code>\n\n<i>Kuyruk kilitlenmesi önlendi, bülten güvenle atlandı.</i>`,
+      { parse_mode: 'HTML' },
+    );
+  } catch (err: any) {
+    log.warn({ err: err.message }, 'Telegram hata bildirimi iletilemedi');
+  }
+}
+

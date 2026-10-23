@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import path from 'path';
 import { createLogger } from '../../lib/logger.js';
 import { getRandomAudioTrack } from './reelGenerator.js';
@@ -68,14 +68,22 @@ export async function generateDigestReel(
   }
 
   const audioTrack = options.audioPath !== undefined ? options.audioPath : await getRandomAudioTrack();
-  const voiceoverPath = options.voiceoverAudioPath && existsSync(options.voiceoverAudioPath)
-    ? options.voiceoverAudioPath
-    : null;
-  const subPath = options.subtitlesPath && existsSync(options.subtitlesPath)
+  
+  // Ses ve altyazı dosyalarının varlığını ve doluluğunu doğrula
+  const voiceoverPath =
+    options.voiceoverAudioPath &&
+    existsSync(options.voiceoverAudioPath) &&
+    statSync(options.voiceoverAudioPath).size > 0
+      ? options.voiceoverAudioPath
+      : null;
+
+  let rawSub = options.subtitlesPath && existsSync(options.subtitlesPath)
     ? options.subtitlesPath
     : options.subtitlesSrtPath && existsSync(options.subtitlesSrtPath)
     ? options.subtitlesSrtPath
     : null;
+
+  const subPath = rawSub && statSync(rawSub).size > 0 ? rawSub : null;
 
   const transType = options.transitionType ?? 'smoothleft';
   const useTransition = transType !== 'none' && slideImages.length > 1;
@@ -216,7 +224,7 @@ export async function generateDigestReel(
         log.info({ outputVideoPath, totalDuration }, '✅ Reels videosu başarıyla oluşturuldu');
         resolve(outputVideoPath);
       } else {
-        log.error({ code, stderr: stderrData.slice(-500) }, 'FFmpeg render hatası');
+        log.error({ code, stderr: stderrData.slice(-1500) }, 'FFmpeg render hatası');
         reject(new Error(`FFmpeg reels işlemi hata ile sonlandı (kod: ${code})`));
       }
     });

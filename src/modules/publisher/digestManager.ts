@@ -13,7 +13,7 @@ import { generateDigestReel } from '../processor/digestGenerator.js';
 import { generateDigestCaption, generateReelsDigestScript } from '../processor/ai.js';
 import { generateSegmentedVoiceoverWithSubtitles } from '../processor/ttsService.js';
 import { postToInstagram } from './instagram.js';
-import { sendDigestApprovalRequest } from '../telegram/bot.js';
+import { sendDigestApprovalRequest, sendDigestErrorReport } from '../telegram/bot.js';
 import { createLogger } from '../../lib/logger.js';
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
@@ -217,13 +217,12 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
     'Bülten için X\'te onaylanan haberler seçildi',
   );
 
-  const totalSlides = orderedCandidates.length;
+  const successfulCandidates: typeof orderedCandidates = [];
   const slideImages: string[] = [];
 
   // 2. Her haber için numaralandırılmış Türkçe 9:16 kart üret
   for (let i = 0; i < orderedCandidates.length; i++) {
     const item = orderedCandidates[i]!;
-    const slideIndex = i + 1;
     const turkishTitle = getTurkishHeadline(item);
 
     // Yüksek çözünürlüklü görsel çözümü (HD yükseltme veya OpenGraph fallback)
@@ -255,21 +254,30 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
         imageUrl: slideImageUrl,
         articleUrl: item.rawUrl,
         preloadedBuffer: slideImageBuffer,
-        slideIndex,
-        totalSlides,
+        slideIndex: successfulCandidates.length + 1,
+        totalSlides: orderedCandidates.length,
         digestType: type,
       });
-      slideImages.push(cardPath);
+
+      if (cardPath && existsSync(cardPath)) {
+        slideImages.push(cardPath);
+        successfulCandidates.push(item);
+      }
     } catch (cardErr: any) {
       log.error({ err: cardErr.message, articleId: item.id }, 'Slayt kartı üretilemedi');
     }
   }
 
-  if (slideImages.length === 0) {
-    throw new Error('Hiçbir slayt kartı üretilemedi, bülten iptal edildi.');
+  // Koruma Katmanı: Reels bülteni için en az 2 slayt kartı başarıyla üretilmiş olmalıdır
+  if (slideImages.length < 2 || successfulCandidates.length < 2) {
+    log.warn(
+      { slideCount: slideImages.length, candidateCount: orderedCandidates.length },
+      '⚠️ Reels bülteni için yeterli geçerli slayt üretilemedi (en az 2 slayt gereklidir), bülten pas geçiliyor',
+    );
+    return null;
   }
 
-  // 3. FFmpeg ile video derle
+  // 3. FFmpeg ile video derleme hazırlığı
   const videoOutputDir = path.join(process.cwd(), 'output', 'videos');
   if (!existsSync(videoOutputDir)) {
     await mkdir(videoOutputDir, { recursive: true });
@@ -278,7 +286,7 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
   const digestId = crypto.randomUUID();
   const outputVideoPath = path.join(videoOutputDir, `digest_${digestId}.mp4`);
 
-  // 3. AI Spiker Metni ve Segmentli TTS Seslendirme + Karaoke Altyazı
+  // 4. AI Spiker Metni ve Segmentli TTS Seslendirme + Karaoke Altyazı (Yalnızca başarılı slaytlar için)
   let voiceoverAudioPath: string | undefined;
   let subtitlesPath: string | undefined;
   let slideDurations: number[] | undefined;
@@ -286,7 +294,7 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
 
   try {
     const reelsScript = await generateReelsDigestScript(
-      orderedCandidates.map((c) => ({
+      successfulCandidates.map((c) => ({
         title: getTurkishHeadline(c),
         category: c.category ?? undefined,
         sourceName: c.sourceName ?? undefined,
@@ -315,19 +323,28 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
     totalDurationSeconds = ttsResult.totalDurationSeconds;
   } catch (ttsErr: any) {
     log.warn({ err: ttsErr.message }, 'Segmentli TTS veya Karaoke altyazı üretilemedi, standart müzikli video derlenecek');
+    // Güvenli fallback süreleri: Slayt başına 5 saniye
+    slideDurations = slideImages.map(() => 5);
+    totalDurationSeconds = 5 * slideImages.length;
   }
 
-  // 4. FFmpeg ile video derle (Slaytlar + TTS + Altyazı + Arka Plan Beat)
-  await generateDigestReel(slideImages, outputVideoPath, {
-    voiceoverAudioPath,
-    subtitlesPath,
-    slideDurations,
-    totalDurationSeconds,
-  });
+  // 5. FFmpeg ile video derle (Slaytlar + TTS + Altyazı + Arka Plan Beat) — Hata Korumalı
+  try {
+    await generateDigestReel(slideImages, outputVideoPath, {
+      voiceoverAudioPath,
+      subtitlesPath,
+      slideDurations,
+      totalDurationSeconds,
+    });
+  } catch (renderErr: any) {
+    log.error({ err: renderErr.message, digestId }, '❌ Reels FFmpeg derleme aşamasında hata oluştu');
+    await sendDigestErrorReport(renderErr.message).catch(() => {});
+    return null; // Queue job crash etmesin, güvenle sonlansın
+  }
 
-  // 4. Gemini ile ortak Türkçe Instagram açıklaması (caption) üret
+  // 6. Gemini ile ortak Türkçe Instagram açıklaması (caption) üret
   const caption = await generateDigestCaption(
-    orderedCandidates.map((c) => ({
+    successfulCandidates.map((c) => ({
       title: getTurkishHeadline(c),
       category: c.category ?? undefined,
       sourceName: c.sourceName ?? undefined,
@@ -336,13 +353,13 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
     type,
   );
 
-  // 5. Veritabanına kaydet
+  // 7. Veritabanına kaydet
   const [newDigest] = await db
     .insert(instagramDigests)
     .values({
       id: digestId,
       type,
-      articleIds: orderedCandidates.map((c) => c.id),
+      articleIds: successfulCandidates.map((c) => c.id),
       videoPath: outputVideoPath,
       caption,
       status: 'pending',
@@ -353,17 +370,17 @@ export async function createDailyDigest(type: DigestType, customHours?: number):
     throw new Error('Bülten veritabanına kaydedilemedi');
   }
 
-  // 6. Telegram onayına gönder
+  // 8. Telegram onayına gönder
   await sendDigestApprovalRequest({
     digestId: newDigest.id,
     type,
-    articleCount: orderedCandidates.length,
+    articleCount: successfulCandidates.length,
     videoPath: outputVideoPath,
     caption,
     periodInfo: description,
   });
 
-  log.info({ digestId: newDigest.id, type, count: orderedCandidates.length }, '✅ Bülten hazırlandı ve Telegram onayına sunuldu');
+  log.info({ digestId: newDigest.id, type, count: successfulCandidates.length }, '✅ Bülten hazırlandı ve Telegram onayına sunuldu');
   return newDigest;
 }
 

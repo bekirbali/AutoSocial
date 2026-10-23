@@ -8,9 +8,9 @@ import { getDynamicSetting } from '../../lib/settings.js';
 
 const log = createLogger('publisher:scheduler');
 
-// Günlük yayın zaman dilimleri (saat, 24h format)
+// Günlük yayın zaman dilimleri (saat, 24h format - Türkiye Saati)
 const TWEET_SLOTS = [
-  // { start: 7, end: 9 },    // Sabah (Şimdilik iptal - sistem 12'den önce uyandırılmıyor)
+  { start: 7, end: 9 },    // Sabah
   { start: 12, end: 14 },  // Öğle
   { start: 18, end: 20 },  // Akşam
   { start: 21, end: 23 },  // Gece
@@ -23,11 +23,37 @@ const WEEKEND_REDUCTION = 0.7;
 const MIN_INTERVAL_MINUTES = 30;
 
 /**
- * Bugün için yayın planı oluştur
+ * Türkiye saat dilimine (Europe/Istanbul, UTC+3) göre günün başlangıç (00:00:00.000)
+ * ve bitiş (23:59:59.999) anlarını UTC Date nesnesi olarak döndürür.
+ */
+export function getTurkeyDayBounds(date: Date = new Date()): { startOfDay: Date; endOfDay: Date } {
+  const trDateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date); // "YYYY-MM-DD"
+
+  const startOfDay = new Date(`${trDateStr}T00:00:00.000+03:00`);
+  const endOfDay = new Date(`${trDateStr}T23:59:59.999+03:00`);
+
+  return { startOfDay, endOfDay };
+}
+
+/**
+ * Bugün için yayın planı oluştur (Türkiye saatine göre deterministik)
  * @returns Yayın zamanları (UTC Date dizisi)
  */
 export function generateDailySchedule(date: Date = new Date(), maxTweetsCount?: number): Date[] {
-  const dayOfWeek = date.getDay(); // 0=Pazar, 6=Cumartesi
+  const trDateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date); // "YYYY-MM-DD"
+
+  // Türkiye saatindeki haftanın günü (0=Pazar, 6=Cumartesi)
+  const dayOfWeek = new Date(`${trDateStr}T12:00:00.000+03:00`).getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
   let maxTweets = maxTweetsCount ?? env.MAX_TWEETS_PER_DAY;
@@ -46,16 +72,21 @@ export function generateDailySchedule(date: Date = new Date(), maxTweetsCount?: 
     for (let i = 0; i < slotTweets; i++) {
       if (scheduledTimes.length >= maxTweets) break;
 
-      // Slot içinde rastgele zaman
+      // Slot içinde rastgele dakika
       const jitterRange = (slot.end - slot.start) * 60; // dakika
       const minuteOffset = Math.floor(Math.random() * jitterRange);
       const totalMinutes = slot.start * 60 + minuteOffset;
 
-      const tweetTime = new Date(date);
-      tweetTime.setHours(Math.floor(totalMinutes / 60), totalMinutes % 60, 0, 0);
+      const hour = Math.floor(totalMinutes / 60);
+      const minute = totalMinutes % 60;
 
-      // Random jitter: ±1-12 dakika
-      const jitter = (Math.random() * 24 - 12) * 60 * 1000; // ±12 dakika
+      // Türkiye saatinde kesin tarih oluştur: YYYY-MM-DDTHH:mm:00.000+03:00
+      const hourStr = String(hour).padStart(2, '0');
+      const minStr = String(minute).padStart(2, '0');
+      const tweetTime = new Date(`${trDateStr}T${hourStr}:${minStr}:00.000+03:00`);
+
+      // Random jitter: ±1-10 dakika
+      const jitter = (Math.random() * 20 - 10) * 60 * 1000;
       tweetTime.setTime(tweetTime.getTime() + jitter);
 
       scheduledTimes.push(tweetTime);
@@ -70,33 +101,30 @@ export function generateDailySchedule(date: Date = new Date(), maxTweetsCount?: 
 
   log.info(
     {
-      date: date.toLocaleDateString('tr-TR'),
+      date: trDateStr,
       isWeekend,
       count: finalTimes.length,
       maxTweets,
     },
-    'Günlük yayın planı oluşturuldu',
+    'Günlük yayın planı oluşturuldu (TR saati)',
   );
 
   return finalTimes;
 }
 
 /**
- * Bugün yayınlanan tweet sayısını kontrol et
+ * Bugün Türkiye saatine göre yayınlanan tweet sayısını kontrol et
  */
-export async function getTodayPublishedCount(): Promise<number> {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+export async function getTodayPublishedCount(date: Date = new Date()): Promise<number> {
+  const { startOfDay, endOfDay } = getTurkeyDayBounds(date);
 
   const result = await db
     .select({ count: count() })
     .from(publishedTweets)
     .where(
       and(
-        gte(publishedTweets.publishedAt, today),
-        lte(publishedTweets.publishedAt, tomorrow),
+        gte(publishedTweets.publishedAt, startOfDay),
+        lte(publishedTweets.publishedAt, endOfDay),
       ),
     );
 
@@ -125,10 +153,10 @@ export async function getNextPublishTime(): Promise<{
   const todayCount = await getTodayPublishedCount();
   const maxTweets = await getDynamicSetting('max_tweets_per_day', env.MAX_TWEETS_PER_DAY);
   if (todayCount >= maxTweets) {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(12, 0, 0, 0);
-    const waitMs = tomorrow.getTime() - Date.now();
+    const { startOfDay } = getTurkeyDayBounds(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    // Yarın sabah 07:30 (TR saati)
+    const tomorrowMorning = new Date(startOfDay.getTime() + 7.5 * 60 * 60 * 1000);
+    const waitMs = Math.max(0, tomorrowMorning.getTime() - Date.now());
     return { canPublish: false, waitMs, reason: 'daily_limit' };
   }
 
