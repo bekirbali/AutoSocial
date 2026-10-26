@@ -1,10 +1,14 @@
-<!-- BEGIN:nextjs-agent-rules -->
+﻿<!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in 
+ode_modules/next/dist/docs/ (resolved from this file's directory; in monorepos the 
+ext package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+This block is written and re-added by 
+ext dev — verify at 
+ode_modules/next/dist/server/lib/generate-agent-files.js. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
 
@@ -21,3 +25,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
    - **Görsel Kalabalık ve Taşma (Clutter / Overflow):** Ekranı gereksiz yere dolduran, yatayda kaymaya zorlayan veya hantal duran başlık/metin yoğunluğu varsa derhal sadeleştirilmelidir.
    - **İnsan Gözüyle Ön İnceleme:** Ekran görüntüsü alındığında alt ajan sadece teknik başarıya değil; "Bu sayfa göze şık ve düzenli geliyor mu, yoksa kaba mı duruyor?" sorusuna dürüst yanıt vermelidir.
    - **Gereksiz İnisiyatif Yasağı:** Kullanıcı sadece tespit veya geri bildirim yaptığında ("böyle kalsın", "neyse" dediğinde) açık talimat gelmedikçe kod düzenlemesi başlatılamaz.
+3. **Model Kesinliği (Strict):**
+   - AutoSocial/TeknoFiltre mimarisinde Gemini 1.5 kesinlikle yasaktır; istisnasız Gemini 3.5/3.6 Flash modelleri kullanılır.
